@@ -1,0 +1,15 @@
+# GitHub language statistics (linguist).
+#
+# RECALLER's product is the Python package in recaller/ — backend, deterministic
+# credit core and agent layer. The files below are still tracked and built as
+# usual; they are only left out of the repository's language bar:
+#
+#   frontend/            the public presentation / marketing site
+#   packages/, data/*.js a JavaScript mirror of the Python core used by
+#                        frontend/'s in-browser demo mode
+#
+# The loan officer console (app/) stays counted: it is part of the product.
+
+frontend/**            linguist-detectable=false
+packages/**            linguist-detectable=false
+data/synthetic/*.js    linguist-detectable=false

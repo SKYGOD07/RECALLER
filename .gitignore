@@ -35,3 +35,6 @@ __pycache__/
 # Local runtime data and secrets (never published)
 var/
 .env
+
+# Generated build output (PyInstaller work files; regenerate with scripts/build_standalone.py)
+build/
