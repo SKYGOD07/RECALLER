@@ -197,7 +197,7 @@ function UpiCard() {
         <span className="acc">UPI settlements</span>
         <span className="t3">22 Jul · 6 of 412</span>
       </div>
-      <ul className="ledger">
+      <ul className="rc-ledger">
         {UPI.map(([t, who, amt]) => (
           <li key={t}>
             <span className="t3">{t}</span>

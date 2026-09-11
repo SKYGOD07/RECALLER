@@ -61,10 +61,10 @@ function Lever({ lever, onApply }) {
 
 function Slider({ label, value, min, max, step, format, onChange }) {
   return (
-    <label className="slider">
-      <span className="slider__head">
-        <span className="slider__label">{label}</span>
-        <span className="slider__value tnum">{format(value)}</span>
+    <label className="rc-slider">
+      <span className="rc-slider__head">
+        <span className="rc-slider__label">{label}</span>
+        <span className="rc-slider__value tnum">{format(value)}</span>
       </span>
       <input
         type="range"
@@ -74,7 +74,7 @@ function Slider({ label, value, min, max, step, format, onChange }) {
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
       />
-      <span className="slider__bounds tnum">
+      <span className="rc-slider__bounds tnum">
         <span>{format(min)}</span>
         <span>{format(max)}</span>
       </span>

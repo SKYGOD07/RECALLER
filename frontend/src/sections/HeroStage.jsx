@@ -71,26 +71,26 @@ export default function HeroStage() {
     <div className="wrap stage-frame" ref={frameRef}>
       <motion.div
         ref={stageRef}
-        className="stage"
+        className="rc-stage"
         style={{ rotateX, scale }}
         onPointerMove={onMove}
         onPointerLeave={onLeave}
         role="img"
         aria-label="Illustration: identity, bank, earnings and invoice evidence converging into a single explained credit decision."
       >
-        <span className="stage__horizon" />
+        <span className="rc-stage__horizon" />
 
-        <div className="stage__chrome">
-          <div className="stage__chrome-l">
+        <div className="rc-stage__chrome">
+          <div className="rc-stage__chrome-l">
             <span className="dot-live" />
             <span>Decision assembly</span>
             <span className="t4">/</span>
             <span className="t2">{CASE.id}</span>
           </div>
-          <span className="stage__trace">{CASE.trace}</span>
+          <span className="rc-stage__trace">{CASE.trace}</span>
         </div>
 
-        <svg className="stage__wires" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+        <svg className="rc-stage__wires" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
           <defs>
             <linearGradient id="wireGrad" x1="0" x2="1">
               <stop offset="0" stopColor="rgb(198,255,77)" stopOpacity="0.15" />
@@ -101,10 +101,10 @@ export default function HeroStage() {
             const d = wire((s.y / 100) * H)
             return (
               <g key={s.tag}>
-                <path d={d} className="stage__wire-base" />
+                <path d={d} className="rc-stage__wire-base" />
                 <motion.path
                   d={d}
-                  className="stage__wire"
+                  className="rc-stage__wire"
                   stroke="url(#wireGrad)"
                   initial={{ pathLength: 0 }}
                   animate={{ pathLength: inView ? 1 : 0 }}
@@ -113,7 +113,7 @@ export default function HeroStage() {
                 {inView && (
                   <motion.circle
                     r="2.6"
-                    className="stage__pulse"
+                    className="rc-stage__pulse"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 2 + i * 0.2 }}
@@ -124,10 +124,10 @@ export default function HeroStage() {
               </g>
             )
           })}
-          <path d={OUT} className="stage__wire-base" />
+          <path d={OUT} className="rc-stage__wire-base" />
           <motion.path
             d={OUT}
-            className="stage__wire stage__wire--out"
+            className="rc-stage__wire rc-stage__wire--out"
             initial={{ pathLength: 0 }}
             animate={{ pathLength: inView ? 1 : 0 }}
             transition={{ duration: 0.8, ease: EASE, delay: 2 }}
@@ -135,7 +135,7 @@ export default function HeroStage() {
           {inView && (
             <motion.circle
               r="3"
-              className="stage__pulse"
+              className="rc-stage__pulse"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 2.8 }}
@@ -243,7 +243,7 @@ export default function HeroStage() {
           </motion.div>
         </Layer>
 
-        <div className="stage__caps" aria-hidden="true">
+        <div className="rc-stage__caps" aria-hidden="true">
           <span>Evidence in</span>
           <span>Reconcile · score</span>
           <span>Decision out</span>

@@ -66,30 +66,30 @@ export default function Showcase() {
       <div className="wrap showcase__stage" ref={stageRef}>
         <div className="showcase__glow" aria-hidden="true" />
         <motion.div
-          className="console glass"
+          className="rc-console glass"
           style={{ rotateX, scale }}
           role="img"
           aria-label="Simulated RECALLER console showing case CR-2291 approved, with income, metrics, reconciliation and audit trail."
         >
-          <div className="console__top">
-            <span className="console__lights">
+          <div className="rc-console__top">
+            <span className="rc-console__lights">
               <i />
               <i />
               <i />
             </span>
-            <span className="console__crumb">
+            <span className="rc-console__crumb">
               RECALLER <span className="t4">/</span> Cases <span className="t4">/</span>{' '}
               <span className="t2">{CASE.id}</span>
             </span>
-            <span className="console__search">Search cases, fields, citations</span>
-            <span className="console__run">
+            <span className="rc-console__search">Search cases, fields, citations</span>
+            <span className="rc-console__run">
               <span className="dot-live" /> Run 58213 · complete
             </span>
-            <span className="console__user">O-112</span>
+            <span className="rc-console__user">O-112</span>
           </div>
 
-          <div className="console__body">
-            <aside className="console__rail">
+          <div className="rc-console__body">
+            <aside className="rc-console__rail">
               {RAIL.map((r, i) => (
                 <span key={r} className={`rail-i${i === 0 ? ' is-on' : ''}`} title={r} />
               ))}
@@ -113,7 +113,7 @@ export default function Showcase() {
                   <span>New to credit</span>
                   <span>EV · 2W</span>
                 </div>
-                <dl className="kv">
+                <dl className="rc-kv">
                   <div>
                     <dt>Bureau</dt>
                     <dd>1 tradeline</dd>
@@ -137,7 +137,7 @@ export default function Showcase() {
                 <div className="veh">
                   <div>
                     <p className="veh__name">{CASE.vehicle}</p>
-                    <dl className="kv kv--stack">
+                    <dl className="rc-kv rc-kv--stack">
                       <div>
                         <dt>On-road</dt>
                         <dd>{inr(CASE.onRoad)}</dd>
@@ -245,10 +245,10 @@ export default function Showcase() {
                   <span>Documents</span>
                   <span>4 / 4</span>
                 </div>
-                <ul className="docs">
+                <ul className="rc-docs">
                   {DOCS.map(([d, p]) => (
                     <li key={d}>
-                      <span className="docs__ok">
+                      <span className="rc-docs__ok">
                         <IconCheck />
                       </span>
                       <span>{d}</span>

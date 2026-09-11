@@ -56,19 +56,19 @@ export default function RunPanel({ stagePlan, progress, busy, onStart, error, on
         </p>
       ) : null}
 
-      <ol className="stages">
+      <ol className="rc-stages">
         {stagePlan.map((stage) => {
           const status = progress?.[stage.id] ?? 'PENDING'
           return (
-            <li key={stage.id} className={`stage stage--${status.toLowerCase()}`}>
-              <span className="stage__marker" aria-hidden="true" />
-              <span className="stage__body">
-                <span className="stage__label">{stage.label}</span>
-                <span className={`stage__actor stage__actor--${ACTOR_KIND[stage.actor] ?? 'idle'}`}>
+            <li key={stage.id} className={`rc-stage rc-stage--${status.toLowerCase()}`}>
+              <span className="rc-stage__marker" aria-hidden="true" />
+              <span className="rc-stage__body">
+                <span className="rc-stage__label">{stage.label}</span>
+                <span className={`rc-stage__actor rc-stage__actor--${ACTOR_KIND[stage.actor] ?? 'idle'}`}>
                   {ACTOR_LABEL[stage.actor] ?? stage.actor}
                 </span>
               </span>
-              <span className="stage__status caps">
+              <span className="rc-stage__status caps">
                 {status === 'HELD' ? 'Held' : status === 'DONE' ? 'Done' : status === 'RUNNING' ? 'Running' : 'Pending'}
               </span>
             </li>

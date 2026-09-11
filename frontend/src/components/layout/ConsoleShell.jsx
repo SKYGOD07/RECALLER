@@ -42,7 +42,7 @@ export default function ConsoleShell({ state, application, children }) {
   const id = route.id
 
   return (
-    <div className="console">
+    <div className="rc-console">
       <header className="ctop">
         <div className="ctop__left">
           <Link to="/" className="ctop__brand" aria-label="RECALLER — landing page">

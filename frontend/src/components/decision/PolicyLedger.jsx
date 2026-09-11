@@ -14,23 +14,23 @@ export default function PolicyLedger({ evaluation }) {
       title="Policy evaluation"
       meta={`${evaluation.policy_id} v${evaluation.policy_version} · ${evaluation.policy_hash}`}
     >
-      <p className="ledger__summary">
+      <p className="rc-ledger__summary">
         <strong className="tnum">
           {num(s.passed)}/{num(s.total)}
         </strong>{' '}
         rules passed · {num(s.referred)} referred · {num(s.failed)} failed
       </p>
 
-      <ul className="ledger">
+      <ul className="rc-ledger">
         {evaluation.rules.map((r) => (
-          <li key={r.code} className={`ledger__row ledger__row--${OUTCOME_KIND[r.outcome]}`}>
-            <span className="ledger__code mono">{r.code}</span>
-            <span className="ledger__label">
+          <li key={r.code} className={`rc-ledger__row rc-ledger__row--${OUTCOME_KIND[r.outcome]}`}>
+            <span className="rc-ledger__code mono">{r.code}</span>
+            <span className="rc-ledger__label">
               {r.label}
-              <span className="ledger__rationale">{r.rationale}</span>
+              <span className="rc-ledger__rationale">{r.rationale}</span>
             </span>
-            <span className="ledger__detail mono tnum">{r.detail || '—'}</span>
-            <span className={`ledger__outcome ledger__outcome--${OUTCOME_KIND[r.outcome]}`}>
+            <span className="rc-ledger__detail mono tnum">{r.detail || '—'}</span>
+            <span className={`rc-ledger__outcome rc-ledger__outcome--${OUTCOME_KIND[r.outcome]}`}>
               {OUTCOME_LABEL[r.outcome]}
             </span>
           </li>

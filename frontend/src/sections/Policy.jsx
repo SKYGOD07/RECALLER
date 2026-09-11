@@ -91,11 +91,11 @@ export default function Policy() {
                   <Counter value={maxFoir} from={50} duration={1} suffix="%" />
                 </span>
               </div>
-              <div className="slider">
-                <span className="slider__fill" style={{ width: `${pct(maxFoir)}%` }} />
-                <span className="slider__knob" style={{ left: `${pct(maxFoir)}%` }} />
+              <div className="rc-slider">
+                <span className="rc-slider__fill" style={{ width: `${pct(maxFoir)}%` }} />
+                <span className="rc-slider__knob" style={{ left: `${pct(maxFoir)}%` }} />
               </div>
-              <div className="slider__axis">
+              <div className="rc-slider__axis">
                 <span>30%</span>
                 <span>60%</span>
               </div>
@@ -107,9 +107,9 @@ export default function Policy() {
                   <span>{k}</span>
                   <span className="pparam__val">{label}</span>
                 </div>
-                <div className="slider">
-                  <span className="slider__fill" style={{ width: `${pct(val, lo, hi)}%` }} />
-                  <span className="slider__knob" style={{ left: `${pct(val, lo, hi)}%` }} />
+                <div className="rc-slider">
+                  <span className="rc-slider__fill" style={{ width: `${pct(val, lo, hi)}%` }} />
+                  <span className="rc-slider__knob" style={{ left: `${pct(val, lo, hi)}%` }} />
                 </div>
               </div>
             ))}
@@ -158,7 +158,7 @@ export default function Policy() {
                   </span>
                   <span className={`scale__me${passes ? '' : ' is-fail'}`} style={{ left: `${pct(REQUESTED.foir)}%` }} />
                 </div>
-                <div className="slider__axis">
+                <div className="rc-slider__axis">
                   <span>30%</span>
                   <span>45%</span>
                   <span>60%</span>
