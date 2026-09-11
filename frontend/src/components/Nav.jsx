@@ -49,10 +49,14 @@ export default function Nav() {
             ))}
           </nav>
 
-          <Link to="/console" className="nav__cta" onClick={close}>
-            <span className="dot-live" />
-            Open console
-          </Link>
+          <div className="nav__actions">
+            <a href="#download" className="nav__aux">
+              Download
+            </a>
+            <Link to="/console" className="nav__cta" onClick={close}>
+              Open console
+            </Link>
+          </div>
 
           <button
             type="button"
