@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRoute, useConsole, navigate, useScrollReset } from '@/hooks/index.js';
 import { seed, getApplication, getRecord, ensureApplication, clearError, MODE, POLICY } from '@/services/api.js';
 import { Icon, StatusPill } from '@/components/ui.jsx';
+import { Cursor } from '@/components/ui/inverted-cursor.tsx';
 import { ENGINE_VERSION } from '@/lib/vocab.js';
 import System from '@/pages/System.jsx';
 
@@ -93,6 +94,7 @@ export default function App() {
 
   return (
     <div className="shell">
+      <Cursor size={60} />
       <Rail
         route={route}
         application={application}

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import ConsoleShell from '@/components/layout/ConsoleShell.jsx'
+import { Cursor } from '@/components/ui/inverted-cursor'
 import { useBootedConsole } from '@/hooks/console'
 import { RouterProvider, useRoute } from '@/lib/router'
 import ApplicationPage from '@/pages/ApplicationPage.jsx'
@@ -43,6 +44,7 @@ function Routes() {
 export default function App() {
   return (
     <RouterProvider>
+      <Cursor size={60} />
       <Routes />
     </RouterProvider>
   )
