@@ -18,14 +18,15 @@ class OUTCOME:
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+Sequence_Band = Union[List[float], Tuple[float, ...]]
+
+
 def in_band(value: float, band: Optional[Sequence_Band]) -> bool:
     if not band or len(band) < 2:
         return False
     lo, hi = band[0], band[1]
     return lo <= value <= hi
 
-
-Sequence_Band = Union[List[float], Tuple[float, ...]]
 
 
 def fmt(v: Any) -> str:
