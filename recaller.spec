@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('D:/RECALLER-main new/policy', 'policy'), ('D:/RECALLER-main new/app/dist', 'app/dist')]
+datas = [('D:/RECALLER-main new/policy', 'policy'), ('D:/RECALLER-main new/app/dist', 'app/dist'), ('D:/RECALLER-main new/packages', 'packages'), ('D:/RECALLER-main new/tests', 'tests')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('uvicorn')

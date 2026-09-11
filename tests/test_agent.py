@@ -17,6 +17,11 @@ from recaller.extraction.adapters import apply_confidence_gate, extract_bundle
 from recaller.narration.memo import narrate
 
 ROOT = Path(__file__).resolve().parent.parent
+if not (ROOT / "packages").exists():
+    alt_root = Path.cwd()
+    if (alt_root / "packages").exists():
+        ROOT = alt_root
+
 POLICY_PATH = ROOT / "policy" / "policy.v1.json"
 SKILL_PATH = ROOT / "packages" / "agent" / "skills" / "credit-underwriter" / "SKILL.md"
 EVIDENCE_RULES_PATH = (

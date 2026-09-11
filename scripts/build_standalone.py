@@ -31,6 +31,8 @@ def build_standalone():
     print("\n2. Packaging with PyInstaller (Directory build)...")
     policy_dir = ROOT / "policy"
     app_dist = ROOT / "app" / "dist"
+    packages_dir = ROOT / "packages"
+    tests_dir = ROOT / "tests"
 
     cmd = [
         sys.executable,
@@ -52,6 +54,10 @@ def build_standalone():
         f"{policy_dir};policy",
         "--add-data",
         f"{app_dist};app/dist",
+        "--add-data",
+        f"{packages_dir};packages",
+        "--add-data",
+        f"{tests_dir};tests",
         "--paths",
         str(ROOT),
         str(ROOT / "recaller" / "cli.py"),
