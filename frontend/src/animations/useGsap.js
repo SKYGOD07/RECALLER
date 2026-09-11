@@ -44,6 +44,12 @@ export function useReveal(selector = '[data-reveal]', options = {}) {
 
   return useGsapScope(({ mm, scope }) => {
     mm.add(FULL, () => {
+      // `from` hides the targets the moment it is created. In a tab where the
+      // ticker never advances that would be permanent, so the reveal is simply
+      // not registered unless we are on screen to see it — the resting state of
+      // every target is already its finished state.
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+
       const targets = gsap.utils.toArray(selector, scope)
       if (!targets.length) return
       gsap.from(targets, {

@@ -401,6 +401,17 @@
   gap: 6px;
   padding: clamp(26px, 3vw, 40px) 22px clamp(18px, 2vw, 26px);
 }
+/* Keyed remount + a time-driven animation: throttling delays it, never hides it. */
+@keyframes move-swap {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+}
+.move__swap {
+  animation: move-swap 0.42s var(--ease) backwards;
+}
+
 .move__verdict strong {
   font-family: var(--display);
   font-size: clamp(40px, 6vw, 76px);

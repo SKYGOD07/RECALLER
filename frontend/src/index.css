@@ -615,7 +615,7 @@ main {
 }
 .statement em {
   font-style: normal;
-  color: var(--text-3);
+  color: var(--indigo);
 }
 
 .measure {

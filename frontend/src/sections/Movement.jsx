@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { EASE } from '../animations/motion'
 import { useReveal } from '../animations/useGsap'
 import { REFERRED } from '../data/live'
 import { inr, pct } from '../lib/format'
@@ -12,7 +10,12 @@ import './editorial.css'
  * The baseline and the solved scenario are both engine output for
  * RCL-2026-0437: referred on asset cover, and the smallest change that clears
  * it. Moving the control re-reads the second set of figures — it does not
- * compute them. Framer handles the number swap; GSAP handles the entrance.
+ * compute them.
+ *
+ * The swap is a keyed CSS animation rather than a frame-driven one on purpose:
+ * a CSS animation is time-driven, so a throttled or backgrounded tab still ends
+ * with the figures visible. A number the officer has to read should never
+ * depend on a frame arriving.
  */
 export default function Movement() {
   const [solved, setSolved] = useState(false)
@@ -58,17 +61,9 @@ export default function Movement() {
             </div>
 
             <div className={`move__verdict move__verdict--${view.decision.toLowerCase()}`}>
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.strong
-                  key={view.decision}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -12 }}
-                  transition={{ duration: 0.45, ease: EASE }}
-                >
-                  {view.decision}
-                </motion.strong>
-              </AnimatePresence>
+              <strong key={view.decision} className="move__swap">
+                {view.decision}
+              </strong>
               <span className="move__reason">
                 {solved ? 'Within policy on every rule' : `${REFERRED.code.code} · ${REFERRED.code.text}`}
               </span>
@@ -78,18 +73,9 @@ export default function Movement() {
               {rows.map(([k, v]) => (
                 <div key={k}>
                   <dt>{k}</dt>
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.dd
-                      key={`${k}-${v}`}
-                      className="tnum"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.35, ease: EASE }}
-                    >
-                      {v}
-                    </motion.dd>
-                  </AnimatePresence>
+                  <dd key={`${k}-${v}`} className="tnum move__swap">
+                    {v}
+                  </dd>
                 </div>
               ))}
             </dl>
