@@ -430,8 +430,9 @@ def reconcile(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def summarise(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Recount severities across findings, considering officer waivers."""
-    live = [f for f in findings if f.get("resolution", {}).get("action") != "WAIVED"]
+    live = [f for f in findings if (f.get("resolution") or {}).get("action") != "WAIVED"]
     blocking_count = sum(1 for f in live if f.get("status") == FINDING_STATUS.BLOCKING)
+
     advisory_count = sum(
         1
         for f in live
