@@ -33,6 +33,7 @@ export const APPROVED = {
   emi: 3363.42,
   foir: 0.1915,
   ltv: 0.8051,
+  assetValue: 118000, // invoice on-road price; the lower of invoice and valuation
   income: 30090,
   obligations: 2400,
   disposable: 24326.58,

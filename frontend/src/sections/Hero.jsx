@@ -1,7 +1,5 @@
-import { useRef } from 'react'
-import { EASE_OUT, gsap } from '../animations/gsap'
-import { useGsapScope } from '../animations/useGsap'
-import { FULL } from '../animations/gsap'
+import { EASE_OUT, FULL, gsap } from '../animations/gsap'
+import { playWhenVisible, useGsapScope } from '../animations/useGsap'
 import { Link } from '../lib/router'
 import { APPROVED } from '../data/live'
 import { inr, pct } from '../lib/format'
@@ -17,14 +15,12 @@ import './hero.css'
  * RCL-2026-0418, not decoration.
  */
 export default function Hero() {
-  const laptop = useRef(null)
-
   const scope = useGsapScope(({ mm, scope: root }) => {
     const q = gsap.utils.selector(root)
 
     mm.add(FULL, () => {
       // Entrance: the world settles, then the words, then the product, then the ask.
-      const intro = gsap.timeline({ defaults: { ease: EASE_OUT } })
+      const intro = gsap.timeline({ paused: true, defaults: { ease: EASE_OUT } })
       intro
         .from(q('[data-layer]'), { scale: 1.06, opacity: 0, duration: 1.6, stagger: 0.06 })
         .from(q('.hero__eyebrow'), { opacity: 0, y: 14, duration: 0.8 }, 0.35)
@@ -33,6 +29,9 @@ export default function Hero() {
         .from(q('.hero__rig'), { opacity: 0, y: 46, scale: 0.97, duration: 1.25 }, 0.8)
         .from(q('.hero__ctas > *'), { opacity: 0, y: 14, duration: 0.7, stagger: 0.08 }, 1.15)
         .from(q('.hero__foot > *'), { opacity: 0, duration: 0.8, stagger: 0.08 }, 1.3)
+
+      // A hero that never animates must still be a hero that can be read.
+      playWhenVisible(intro)
 
       // Depth: the ridges drift at different rates while the hero is on screen.
       gsap.to(q('[data-depth="far"]'), {
@@ -98,7 +97,7 @@ export default function Hero() {
           </div>
         </div>
 
-        <Workstation ref={laptop} />
+        <Workstation />
 
         <div className="wrap hero__foot">
           <span className="meta">

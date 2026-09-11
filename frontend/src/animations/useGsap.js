@@ -162,6 +162,45 @@ export function useCountUp(selector = '[data-count]') {
   }, [selector])
 }
 
+/**
+ * Play an intro timeline, but never leave content hidden if it cannot run.
+ *
+ * A `from()` tween writes its start state immediately, so a page opened in a
+ * background tab — where requestAnimationFrame is throttled and GSAP's ticker
+ * does not advance — would sit on an invisible hero indefinitely. So: play when
+ * the document is visible, wait for it if it is not, and force the finished
+ * state if that wait goes on too long.
+ *
+ * @param {gsap.core.Timeline} tl a paused timeline
+ * @returns {Function} cleanup
+ */
+export function playWhenVisible(tl, { forceAfterMs = 2500 } = {}) {
+  if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+    tl.play()
+    return () => {}
+  }
+
+  let done = false
+  const cleanup = () => {
+    if (done) return
+    done = true
+    clearTimeout(timer)
+    document.removeEventListener('visibilitychange', onVisible)
+  }
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible') return
+    cleanup()
+    tl.play()
+  }
+  const timer = setTimeout(() => {
+    cleanup()
+    tl.progress(1)
+  }, forceAfterMs)
+
+  document.addEventListener('visibilitychange', onVisible)
+  return cleanup
+}
+
 /** Refresh ScrollTrigger after layout-affecting changes (route swap, font load). */
 export function refreshScrollTriggers() {
   ScrollTrigger.refresh()
