@@ -41,6 +41,16 @@ Engine mode persists **intent**, not output: which files were processed and what
 the officer resolved. On reload the pipeline is re-run from that intent, which is
 safe precisely because it is deterministic — the rehydrated record is identical.
 
+## Evidence strength
+
+`src/sections/Strength.jsx` and `src/components/decision/EvidenceStrength.jsx`
+render `record.evidence_strength` — RECALLER's own 0–100 measure of how much of a
+file is actually known, produced by `computeEvidenceStrength()` in
+`packages/credit-engine`. The landing section animates the four components
+arriving in the order the engine evaluates them; **the animation controls when a
+number is revealed, never what it is**, and every bar's resting state is its true
+proportion so a tab that never animates still tells the truth.
+
 ## Structure
 
 ```

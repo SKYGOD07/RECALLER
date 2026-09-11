@@ -31,7 +31,7 @@ a recognised income figure. Models read documents and explain results;
 
 ```
 RECALLER/
-├── recaller/                 The product: one Python package
+├── recaller/                 The product: Python package & FastAPI backend
 │   ├── app/                    FastAPI backend: api, service, SQLite, jobs, middleware
 │   ├── documents/              upload reading (PyMuPDF), pattern extractor, extraction router
 │   ├── ai/hermes/              agent layer built on Hermes Agent patterns (MIT)
@@ -41,19 +41,28 @@ RECALLER/
 │   ├── core/  extraction/  reconciliation/  credit_engine/  policy_engine/
 │   ├── narration/  whatif/  orchestrator/  synthetic/
 │   ├── config.py  cli.py
-├── app/                      Loan officer console (React) — a pure HTTP client of the backend
-├── frontend/                 Public presentation site
-├── policy/policy.v1.json     Every threshold in the system
-├── tests/                    pytest: engine, pipeline, agent layer, end-to-end API
-├── scripts/                  Windows launcher, standalone build
+├── packages/                 Deterministic domain packages (JavaScript / ES modules)
+│   ├── core/                   money math, hashing, audit ledger, constants
+│   ├── credit-engine/          deterministic EMI, FOIR, LTV, evidence strength
+│   ├── reconciliation/         cross-document consistency & similarity
+│   ├── policy-engine/          rule evaluator & threshold decision engine
+│   ├── extraction/             document pattern extractor
+│   ├── narration/              credit memo generation
+│   ├── whatif/                 binary search solvers (amount, tenure, co-applicant)
+│   └── orchestrator/           12-stage resumable underwriting pipeline
+├── frontend/                 Full modern web app: landing site + loan officer console (React + Vite)
+├── app/                      Loan officer console client (React)
+├── policy/policy.v1.json     Every credit & risk threshold in the system
+├── tests/                    pytest: engine, pipeline, agent layer, end-to-end API (72 tests)
+├── scripts/                  Windows launcher, standalone build, verification
 ├── workflows/                n8n workflow definitions               [Phase 4]
 ├── installer/  winget/       Windows packaging
 ├── n8n-master/  hermes/      local reference sources — git-ignored, never published
 └── docs/                     local notes — git-ignored
 ```
 
-The console holds no credit logic. Every number on a screen arrived from the
-backend already computed.
+The frontend console holds no credit logic. Every number on a screen arrived from the
+backend or deterministic packages already computed.
 
 ## Running it
 
@@ -62,22 +71,33 @@ the package on first run, runs the test suite (a failing engine never starts),
 builds the console if needed, serves everything on http://127.0.0.1:4180/ and
 opens a browser.
 
-**Terminal:**
+### 1. Start the Backend API (FastAPI)
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install -e ".[dev]"
+.\.venv\Scripts\pip install -e ".[dev]"
 
-.venv\Scripts\python -m recaller.cli serve          # console + API on :4180, API docs at /docs
-.venv\Scripts\python -m recaller.cli test           # full test suite
+.\.venv\Scripts\python -m recaller.cli serve --host 127.0.0.1 --port 4180
 ```
+- API & Console: `http://127.0.0.1:4180/`
+- Interactive Swagger Docs: `http://127.0.0.1:4180/docs`
+- Health check: `http://127.0.0.1:4180/api/health`
 
-**Console development** (hot reload, every call visible in DevTools → Network):
+### 2. Start the Frontend (Vite)
 
 ```powershell
-.venv\Scripts\python -m recaller.cli serve --reload --no-browser   # backend on :4180
-npm --prefix app install
-npm --prefix app run dev                                           # console on :5180, proxies /api → :4180
+npm --prefix frontend install
+npm --prefix frontend run dev
+```
+- UI available at `http://localhost:5173/`
+- Seamlessly connects to the backend at `http://127.0.0.1:4180`
+- Automatically degrades to in-process deterministic execution if backend is offline
+
+### 3. Verification & Testing
+
+```powershell
+.\.venv\Scripts\pytest -v          # Python backend test suite (72 passing tests)
+npm --prefix frontend run build   # Frontend production bundle compilation
 ```
 
 **Standalone executable:** `python scripts/build_standalone.py` →
@@ -154,6 +174,26 @@ Instructor-validated structured output.
 - **The boundary** — the tool registry refuses any tool that decides or computes
   (`approve_*`, `compute_*`, `*_emi`, `set_policy`…), and a test asserts the agent
   package imports neither the credit engine nor the policy engine.
+
+### Evidence strength
+
+FOIR, EMI and LTV answer whether the borrower can repay. `computeEvidenceStrength`
+answers the question a loan officer asks first: **how much of this file do we
+actually know?** Four components of 25, scored 0–100:
+
+| Component | What it measures |
+| --- | --- |
+| Corroboration | Independent income sources, and whether they agree inside the policy's own tolerance |
+| Confidence | How far the critical fields sit above the policy's confidence floor |
+| Consistency | What cross-document reconciliation found |
+| Coverage | Which required document types produced fields, and how many months they carry |
+
+Every threshold is read from `policy/policy.v1.json`, so moving a cutoff moves
+the score. It is not a credit score, it scores the file rather than the borrower,
+and **no policy rule reads it** — a weak file is a reason to look harder, not a
+reason to decline. It is computed for held files too, which is where it matters
+most: confirming the three held fields on `RCL-2026-0421` lifts it from 60 to 78,
+because the officer's answer is itself evidence.
 
 ### Configuration
 
