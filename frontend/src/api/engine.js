@@ -10,7 +10,15 @@
  * functions return.
  */
 
-import { APP_STATUS } from '@core/constants.js'
+import { verifyLedger } from '@core/audit.js'
+import {
+  APP_STATUS,
+  DOC_LABELS,
+  OPTIONAL_DOCS,
+  PROVENANCE,
+  REQUIRED_DOCS,
+  STATUS_LABELS,
+} from '@core/constants.js'
 import {
   STAGE_PLAN,
   replay as replayRun,
@@ -19,9 +27,10 @@ import {
   runUnderwriting,
   runWhatIf,
 } from '@orchestrator/index.js'
+import { DECISIONS, ENGINE_VERSION, WORKFLOW_VERSION } from '@core/constants.js'
+import { STAGE_LABELS } from '@core/audit.js'
 import policyV1 from '@policy/policy.v1.json'
 import { SYNTHETIC_APPLICATIONS } from '@synthetic/applications.js'
-import { ENGINE_VERSION, WORKFLOW_VERSION } from '@core/constants.js'
 
 /**
  * Stage pacing.
@@ -139,6 +148,39 @@ export function createEngineTransport() {
 
     async getStagePlan() {
       return STAGE_PLAN
+    },
+
+    /** Mirrors GET /api/bootstrap: everything the console needs to start. */
+    async bootstrap() {
+      return {
+        engine_version: ENGINE_VERSION,
+        workflow_version: WORKFLOW_VERSION,
+        policy: policyV1,
+        stage_plan: STAGE_PLAN,
+        applications: [...state.applications.values()],
+        vocab: {
+          status_labels: STATUS_LABELS,
+          doc_labels: DOC_LABELS,
+          required_docs: REQUIRED_DOCS,
+          optional_docs: OPTIONAL_DOCS,
+          provenance: PROVENANCE,
+          decisions: DECISIONS.ALL ?? [DECISIONS.APPROVE, DECISIONS.REFER, DECISIONS.REJECT],
+          stage_labels: STAGE_LABELS,
+        },
+        llm: { enabled: false, provider: null, model: null },
+      }
+    },
+
+    /** Mirrors GET /api/applications/:id/audit/verify. */
+    async verifyAudit(id) {
+      const record = requireRecord(id)
+      const ledger = record.audit ?? { events: [] }
+      return {
+        ...verifyLedger(ledger),
+        events: ledger.events?.length ?? 0,
+        head: ledger.head,
+        trace_id: ledger.traceId,
+      }
     },
 
     async listApplications() {
