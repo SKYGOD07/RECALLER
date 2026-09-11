@@ -15,6 +15,7 @@ import Policy from '@/sections/Policy.jsx'
 import Problem from '@/sections/Problem.jsx'
 import Proof from '@/sections/Proof.jsx'
 import Showcase from '@/sections/Showcase.jsx'
+import Strength from '@/sections/Strength.jsx'
 
 /**
  * The public site.
@@ -34,6 +35,7 @@ import Showcase from '@/sections/Showcase.jsx'
  *   light  Proof         four documents, one version of the truth
  *   dark   Showcase      the console itself
  *   light  Deterministic the model never calculates the money
+ *   dark   Strength      how much of this file do we know
  *   dark   Policy        change the policy, not the code
  *   dark   Decision      one accountable decision
  *   dark   HumanLoop     when confidence drops, RECALLER stops
@@ -62,6 +64,7 @@ export default function LandingPage() {
         <Proof />
         <Showcase />
         <Deterministic />
+        <Strength />
         <Policy />
         <Decision />
         <HumanLoop />

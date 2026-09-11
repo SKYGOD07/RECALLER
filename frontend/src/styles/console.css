@@ -2230,3 +2230,122 @@ body[data-mode='console'] .guides {
     display: none;
   }
 }
+
+/* ---------- evidence strength ------------------------------------------- */
+
+.estr__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--c-line);
+}
+.estr__score {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--display);
+  font-size: clamp(30px, 3.4vw, 44px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+.estr__score i {
+  font-style: normal;
+  font-size: 0.34em;
+  color: var(--text-4);
+}
+.estr--approve .estr__score {
+  color: var(--approve);
+}
+.estr--refer .estr__score {
+  color: var(--refer);
+}
+.estr--reject .estr__score {
+  color: var(--reject);
+}
+.estr--ai .estr__score {
+  color: var(--ai);
+}
+
+.estr__rows {
+  display: grid;
+  margin-top: 4px;
+}
+.estr__row {
+  display: grid;
+  grid-template-columns: 122px minmax(0, 1fr) 62px;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--c-line);
+}
+.estr__row:last-child {
+  border-bottom: 0;
+}
+.estr__label {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.estr__track {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.estr__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--idle);
+  transition: width 0.7s var(--ease);
+}
+.estr__fill--approve {
+  background: var(--approve);
+}
+.estr__fill--refer {
+  background: var(--refer);
+}
+.estr__fill--reject {
+  background: var(--reject);
+}
+.estr__fill--ai {
+  background: var(--ai);
+}
+.estr__points {
+  justify-self: end;
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.estr__points i {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-4);
+}
+.estr__detail {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.estr__note {
+  margin-top: 16px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-4);
+}
+
+@media (max-width: 720px) {
+  .estr__row {
+    grid-template-columns: minmax(0, 1fr) 56px;
+  }
+  .estr__track {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .estr__detail {
+    order: 4;
+  }
+}

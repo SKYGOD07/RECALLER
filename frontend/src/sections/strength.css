@@ -1,0 +1,231 @@
+/* ==========================================================================
+   EVIDENCE STRENGTH — the score assembling itself
+   ==========================================================================
+   The layout exists to be watched in order: label, bar, points, then the
+   sentence that says why. The running total sits beside it and climbs as each
+   component lands.
+   ========================================================================== */
+
+.st {
+  background: linear-gradient(180deg, #060607, #090a10 50%, #060607);
+}
+
+.st__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.6fr);
+  gap: clamp(18px, 2.6vw, 36px);
+  align-items: start;
+}
+
+/* ---------- the panel ---------- */
+
+.st__panel {
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.008));
+  box-shadow: 0 40px 90px -60px rgba(0, 0, 0, 0.9);
+}
+
+.st__bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.st__file {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-4);
+}
+.st__cases {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.st__case {
+  display: grid;
+  gap: 1px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 11.5px;
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition:
+    box-shadow 0.3s var(--ease),
+    background-color 0.3s,
+    color 0.3s;
+}
+.st__case span {
+  font-size: 9.5px;
+  color: var(--text-4);
+}
+.st__case:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.st__case.is-active {
+  color: var(--text);
+  background: rgba(var(--indigo-rgb), 0.12);
+  box-shadow: inset 0 0 0 1px rgba(var(--indigo-rgb), 0.5);
+}
+
+/* ---------- one component ---------- */
+
+.st__rows {
+  display: grid;
+}
+.strow {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 78px;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 18px 20px;
+  border-top: 1px solid var(--line);
+}
+.strow:first-child {
+  border-top: 0;
+}
+.strow__label {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.strow__track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.strow__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  transform-origin: left center;
+  /* overridden inline with the real proportion; never assume full */
+  transform: scaleX(0);
+  background: linear-gradient(90deg, var(--indigo), var(--emerald));
+  box-shadow: 0 0 16px -2px rgba(var(--indigo-rgb), 0.7);
+}
+.strow__points {
+  justify-self: end;
+  font-family: var(--display);
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.strow__points i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-4);
+}
+.strow__detail {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* ---------- the running total ---------- */
+
+.st__score {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: clamp(22px, 2.4vw, 32px);
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: radial-gradient(120% 80% at 50% 0%, rgba(var(--indigo-rgb), 0.14), transparent 62%), rgba(255, 255, 255, 0.015);
+  overflow: hidden;
+}
+.st__meter {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 2px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--indigo), var(--emerald));
+}
+.st__total {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--display);
+  font-size: clamp(52px, 7vw, 88px);
+  font-weight: 500;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+}
+.st__total i {
+  font-style: normal;
+  font-size: 0.26em;
+  letter-spacing: 0;
+  color: var(--text-4);
+}
+.st__band {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.st__band--strong {
+  color: var(--emerald);
+  background: rgba(var(--em-rgb), 0.1);
+  box-shadow: inset 0 0 0 1px rgba(var(--em-rgb), 0.34);
+}
+.st__band--adequate {
+  color: var(--indigo-soft);
+  background: rgba(var(--indigo-rgb), 0.12);
+  box-shadow: inset 0 0 0 1px rgba(var(--indigo-rgb), 0.4);
+}
+.st__band--thin {
+  color: var(--amber);
+  background: rgba(var(--amber-rgb), 0.1);
+  box-shadow: inset 0 0 0 1px rgba(var(--amber-rgb), 0.34);
+}
+.st__band--weak {
+  color: var(--red);
+  background: rgba(var(--red-rgb), 0.1);
+  box-shadow: inset 0 0 0 1px rgba(var(--red-rgb), 0.34);
+}
+.st__lift {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  background: rgba(var(--em-rgb), 0.07);
+  box-shadow: inset 0 0 0 1px rgba(var(--em-rgb), 0.24);
+}
+.st__lift b {
+  font-weight: 500;
+  color: var(--emerald);
+}
+
+.st__note {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+@media (max-width: 900px) {
+  .st__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .strow {
+    grid-template-columns: minmax(0, 1fr) 70px;
+  }
+  .strow__track {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .strow__detail {
+    order: 4;
+  }
+}

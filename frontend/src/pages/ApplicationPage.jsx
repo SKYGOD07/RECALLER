@@ -18,6 +18,7 @@ import BorrowerCard from '@/components/decision/BorrowerCard.jsx'
 import ComputePanel from '@/components/decision/ComputePanel.jsx'
 import CreditMemo from '@/components/decision/CreditMemo.jsx'
 import DecisionHero from '@/components/decision/DecisionHero.jsx'
+import EvidenceStrength from '@/components/decision/EvidenceStrength.jsx'
 import PolicyLedger from '@/components/decision/PolicyLedger.jsx'
 import RunPanel from '@/components/decision/RunPanel.jsx'
 import EvidenceGrid from '@/components/evidence/EvidenceGrid.jsx'
@@ -228,6 +229,7 @@ export default function ApplicationPage({ id, tab }) {
           {record?.decision ? (
             <>
               <DecisionHero record={record} policy={state.policy} />
+              <EvidenceStrength strength={record.evidence_strength} />
               <ComputePanel credit={record.credit} policy={state.policy} />
               <PolicyLedger evaluation={record.policyEvaluation} />
               <CreditMemo record={record} />
@@ -255,6 +257,8 @@ export default function ApplicationPage({ id, tab }) {
               </Link>
             </div>
           ) : null}
+
+          {suspended ? <EvidenceStrength strength={record.evidence_strength} /> : null}
         </div>
 
         <aside className="ws__side">

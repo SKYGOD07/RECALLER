@@ -155,6 +155,63 @@ export const PIPELINE = [
   { id: 'MEMO', label: 'Credit memo', actor: 'ENGINE', detail: '10 sections written' },
 ]
 
+/**
+ * Evidence strength — RECALLER's own measure, and the one number here that is
+ * not about money.
+ *
+ * FOIR, LTV and the policy rules answer "can this person repay". This answers
+ * the question a loan officer asks first: "how much of this file do I actually
+ * know?" Four components of 25, every one a fact already extracted, every
+ * threshold read from the policy document. It explains a decision's footing and
+ * decides nothing itself.
+ *
+ * Produced by computeEvidenceStrength() in packages/credit-engine — the same
+ * function the Python backend runs, verified to produce identical output.
+ */
+export const STRENGTH = {
+  // RCL-2026-0418, the file in the hero.
+  clean: {
+    id: 'RCL-2026-0418',
+    score: 88,
+    band: 'STRONG',
+    components: [
+      { key: 'corroboration', label: 'Corroboration', points: 25, max: 25, detail: '2 independent income sources, 2.6% apart' },
+      { key: 'confidence', label: 'Confidence', points: 12.92, max: 25, detail: '6 critical fields, mean 94.2% against a 88.0% floor' },
+      { key: 'consistency', label: 'Consistency', points: 25, max: 25, detail: 'All 8 cross-document checks agreed' },
+      { key: 'coverage', label: 'Coverage', points: 25, max: 25, detail: '3/3 required document types, 6 of 6 months observed' },
+    ],
+  },
+
+  // RCL-2026-0433 — four contradictions empty the consistency component.
+  contradicted: {
+    id: 'RCL-2026-0433',
+    score: 54,
+    band: 'THIN',
+    components: [
+      { key: 'corroboration', label: 'Corroboration', points: 20, max: 25, detail: '2 independent income sources, 53.6% apart' },
+      { key: 'confidence', label: 'Confidence', points: 9.33, max: 25, detail: '6 critical fields, mean 92.5% against a 88.0% floor' },
+      { key: 'consistency', label: 'Consistency', points: 0, max: 25, detail: '4 blocking contradictions' },
+      { key: 'coverage', label: 'Coverage', points: 25, max: 25, detail: '3/3 required document types, 6 of 6 months observed' },
+    ],
+  },
+
+  // RCL-2026-0421 — held at the gate, so confidence earns nothing. Confirming
+  // the three held fields in Assist lifts the mean to 96.5% and the score to 78:
+  // the officer's answer is itself evidence, and the file measurably improves.
+  held: {
+    id: 'RCL-2026-0421',
+    score: 60,
+    band: 'ADEQUATE',
+    afterAssist: { score: 78, band: 'ADEQUATE', confidence: 17.67 },
+    components: [
+      { key: 'corroboration', label: 'Corroboration', points: 10, max: 25, detail: 'A single income source' },
+      { key: 'confidence', label: 'Confidence', points: 0, max: 25, detail: '6 critical fields, mean 85.7% against a 88.0% floor' },
+      { key: 'consistency', label: 'Consistency', points: 25, max: 25, detail: 'All 7 cross-document checks agreed' },
+      { key: 'coverage', label: 'Coverage', points: 25, max: 25, detail: '3/3 required document types, 6 of 6 months observed' },
+    ],
+  },
+}
+
 /** The policy the site quotes. Read from policy/policy.v1.json. */
 export const POLICY = {
   id: 'RCL-EV-RETAIL',
@@ -180,5 +237,6 @@ export const FACTS = [
   { value: 14, label: 'Policy rules', detail: 'Every one versioned, hashed and evaluated per file.' },
   { value: 12, label: 'Recorded stages', detail: 'Each appended to a hash-chained ledger.' },
   { value: 8, label: 'Synthetic cases', detail: 'Approve, refer, decline, contradiction and held.' },
+  { value: 4, label: 'Evidence components', detail: 'Corroboration, confidence, consistency, coverage — scored 0–100.' },
   { value: 0, label: 'Figures from a model', detail: 'EMI, FOIR and LTV come only from policy code.' },
 ]
