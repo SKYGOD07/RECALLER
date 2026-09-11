@@ -58,19 +58,44 @@ to JavaScript under its MIT licence (see `packages/agent/THIRD_PARTY_NOTICES.md`
 
 ## Running it
 
-**Windows, double-click:** `Start RECALLER.cmd`
+### Option A: Windows Package Manager (`winget`)
 
-It checks for Node.js 20+, installs dependencies on first run, verifies the
-credit engine, builds the console and opens a browser. There are no absolute
-paths and no machine-specific configuration; the folder can live anywhere.
+```powershell
+# Install RECALLER via winget
+winget install SKYGOD07.RECALLER
 
-**From a terminal:**
+# Launch Loan Officer Console
+recaller serve
 
-```bash
-npm run install:all     # once
-npm run app             # dev server on http://127.0.0.1:4180
-npm run check           # engine tests + full pipeline verification
+# Run deterministic test suite
+recaller test
 ```
+
+### Option B: Windows Double-Click Launcher
+
+Double-click `Start RECALLER.cmd` in the repository root.
+
+It automatically checks Python 3.10+, installs requirements if needed, verifies the credit engine, builds the console, starts the FastAPI server, and launches your default browser at `http://127.0.0.1:4180/`.
+
+### Option C: Python CLI
+
+```powershell
+# Install Python dependencies
+pip install -e .
+
+# Start the console server
+python -m recaller.cli serve --port 4180
+
+# Run all deterministic engine, pipeline, and agent tests
+python -m recaller.cli test
+```
+
+### Option D: Build Standalone Windows Executable & Winget Release
+
+```powershell
+python scripts/build_standalone.py
+```
+Outputs `dist/recaller/recaller.exe` and `dist/recaller-windows-x64.zip`.
 
 ## The workflow
 

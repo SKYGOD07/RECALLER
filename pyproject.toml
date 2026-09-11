@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recaller"
+version = "1.0.0"
+description = "RECALLER — AI agentic credit underwriter for thin-file green borrowers"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+recaller = "recaller.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["recaller*"]

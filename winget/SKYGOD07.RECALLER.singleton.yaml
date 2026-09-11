@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.6.0.schema.json
+PackageIdentifier: SKYGOD07.RECALLER
+PackageVersion: 1.0.0
+PackageName: RECALLER
+Publisher: SKYGOD07
+Author: SKYGOD07
+License: MIT
+LicenseUrl: https://github.com/SKYGOD07/RECALLER/blob/main/LICENSE
+Copyright: (c) 2026 RECALLER Contributors
+ShortDescription: Deterministic AI agentic credit underwriting engine and loan officer console for thin-file EV borrowers.
+Description: |-
+  RECALLER is a deterministic, AI agentic credit underwriting engine and loan officer console built in Python.
+  It provides:
+  - 100% integer-paise financial arithmetic and exact FOIR/LTV calculations.
+  - FNV-1a 128-bit hash-chained immutable audit ledgers.
+  - Policy engine with hierarchical precedence and unambiguous reason codes.
+  - Real-time what-if solvers and counterfactual recommendation engines.
+  - Sandboxed agent runtime with strict tool boundary enforcement.
+  - High-performance loan officer console served locally on Windows.
+Moniker: recaller
+Tags:
+  - credit
+  - underwriting
+  - fintech
+  - lending
+  - ai-agent
+  - ev-financing
+  - deterministic
+  - banking
+PackageUrl: https://github.com/SKYGOD07/RECALLER
+PublisherUrl: https://github.com/SKYGOD07/RECALLER
+PublisherSupportUrl: https://github.com/SKYGOD07/RECALLER/issues
+ReleaseNotesUrl: https://github.com/SKYGOD07/RECALLER/releases/tag/v1.0.0
+MinimumOSVersion: 10.0.0.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: recaller\recaller.exe
+    PortableCommandAlias: recaller
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/SKYGOD07/RECALLER/releases/download/v1.0.0/recaller-windows-x64.zip
+    InstallerSha256: 3b361e05810ddbc56b125b72dfce2fec7fecd18a450f99a21593a8102be5248a
+    UpgradeBehavior: install
+ManifestType: singleton
+ManifestVersion: 1.6.0
