@@ -16,7 +16,15 @@ from typing import Any, Dict, List, Optional
 
 import pymupdf
 
-from ..ai.hermes import AgentExtractionAdapter, ProviderError, check_provider, explain_decision, provider_status, review_file
+from ..ai.hermes import (
+    AgentExtractionAdapter,
+    ProviderError,
+    ask_about_file,
+    check_provider,
+    explain_decision,
+    provider_status,
+    review_file,
+)
 from ..core.audit import verify_ledger
 from ..core.constants import APP_STATUS, DOC_LABELS, DOC_TYPES, OPTIONAL_DOCS, REQUIRED_DOCS, WORKFLOW_VERSION
 from ..core.hash import hash_value
@@ -527,6 +535,28 @@ class UnderwritingService:
             self.db.save_agent_run(run)
             self._agent_tasks.pop(run["id"], None)
             self.jobs.publish(run["app_id"], {"type": "agent", "run_id": run["id"], "kind": run["kind"], "status": run["status"]})
+
+    async def ask(self, app_id: str, question: str, history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """One conversational turn with the model about an underwritten file. Stored as an ``ask`` agent run."""
+        if self.provider is None:
+            raise ServiceError(503, "LLM_NOT_CONFIGURED", _NO_MODEL)
+        record = self.require_record(app_id)
+        who = {"provider": getattr(self.provider, "name", "custom"), "model": getattr(self.provider, "model", None)}
+        run = {"id": f"AGR-{uuid.uuid4().hex[:10]}", "app_id": app_id, "kind": "ask", "status": "RUNNING", **who, "started_at": now_iso()}
+        try:
+            run["output"] = await ask_about_file(self.provider, record, question, history)
+            run["status"] = "DONE"
+        except ValueError as exc:
+            raise ServiceError(422, "INVALID_QUESTION", str(exc)) from exc
+        except Exception as exc:
+            run["status"] = "FAILED"
+            run["error"] = str(exc) if isinstance(exc, ProviderError) else f"{type(exc).__name__}: {exc}"
+            run["finished_at"] = now_iso()
+            self.db.save_agent_run(run)
+            raise ServiceError(502, "LLM_UNREACHABLE", run["error"], who) from exc
+        run["finished_at"] = now_iso()
+        self.db.save_agent_run(run)
+        return run
 
     async def check_llm(self) -> Dict[str, Any]:
         """Send the configured model one short prompt and return exactly what came back."""

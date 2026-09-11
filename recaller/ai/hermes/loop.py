@@ -38,6 +38,7 @@ class AgentRun:
     iterations: int = 0
     exit_reason: str = "completed"
     usage: Dict[str, int] = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
+    reasoning: List[str] = field(default_factory=list)  # the model's own reasoning, one entry per turn that had any
 
 
 async def run_agent(
@@ -62,6 +63,8 @@ async def run_agent(
         run.iterations = iteration
         for k, v in (reply.usage or {}).items():
             run.usage[k] = run.usage.get(k, 0) + int(v or 0)
+        if getattr(reply, "thinking", ""):
+            run.reasoning.append(reply.thinking)
 
         calls = [c for c in (reply.tool_calls or []) if c.get("name")]
         transcript.append(
