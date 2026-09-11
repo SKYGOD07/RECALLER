@@ -52,7 +52,10 @@ class RequestLog:
 
 def _error(status: int, code: str, message: str, request: Request, details: Any = None) -> JSONResponse:
     rid = getattr(request.state, "request_id", None)
-    body = {"error": {"code": code, "message": message, "request_id": rid, **({"details": details} if details is not None else {})}}
+    body = {
+        "error": {"code": code, "message": message, "request_id": rid, **({"details": details} if details is not None else {})},
+        "detail": message,  # FastAPI-style field, for clients that read `detail`
+    }
     return JSONResponse(body, status_code=status, headers={"X-Error-Code": code})
 
 

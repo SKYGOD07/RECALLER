@@ -31,7 +31,6 @@ def build_standalone():
     print("\n2. Packaging with PyInstaller (Directory build)...")
     policy_dir = ROOT / "policy"
     app_dist = ROOT / "app" / "dist"
-    packages_dir = ROOT / "packages"
     tests_dir = ROOT / "tests"
 
     cmd = [
@@ -50,12 +49,22 @@ def build_standalone():
         "pydantic",
         "--collect-all",
         "starlette",
+        "--collect-all",
+        "pymupdf",
+        # Agent skills (SKILL.md + references) ship as package data.
+        "--collect-data",
+        "recaller",
+        # Imported by string (uvicorn factory) or lazily (only when a model is configured).
+        "--hidden-import",
+        "recaller.app.server",
+        "--collect-submodules",
+        "anthropic",
+        "--collect-submodules",
+        "instructor",
         "--add-data",
         f"{policy_dir};policy",
         "--add-data",
         f"{app_dist};app/dist",
-        "--add-data",
-        f"{packages_dir};packages",
         "--add-data",
         f"{tests_dir};tests",
         "--paths",

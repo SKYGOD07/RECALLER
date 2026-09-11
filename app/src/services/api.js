@@ -316,7 +316,7 @@ function markProcessing(id) {
 export async function startUnderwriting(id, { paced = true } = {}) {
   markProcessing(id);
   try {
-    await request('POST', `/api/applications/${encodeURIComponent(id)}/underwrite`, { json: { paced } });
+    await request('POST', `/api/applications/${encodeURIComponent(id)}/underwrite?async=true`, { json: { paced } });
     return await followJob(id);
   } catch (err) {
     await loadApplication(id).catch(() => {});
@@ -330,7 +330,7 @@ export async function resumeUnderwriting(id, resolutions, { paced = true } = {})
   if (header) state.applications.set(id, { ...header, status: 'PROCESSING' });
   emit();
   try {
-    await request('POST', `/api/applications/${encodeURIComponent(id)}/resume`, { json: { resolutions, paced } });
+    await request('POST', `/api/applications/${encodeURIComponent(id)}/resume?async=true`, { json: { resolutions, paced } });
     return await followJob(id);
   } catch (err) {
     await loadApplication(id).catch(() => {});

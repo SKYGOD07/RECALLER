@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { useRoute, useConsole, navigate, useScrollReset } from '@/hooks/index.js';
-import { seed, getApplication, getRecord, getProgress, MODE, POLICY } from '@/services/api.js';
+import { seed, getApplication, getRecord, ensureApplication, clearError, MODE, POLICY } from '@/services/api.js';
 import { Icon, StatusPill } from '@/components/ui.jsx';
-import { ENGINE_VERSION } from '@core/constants.js';
+import { ENGINE_VERSION } from '@/lib/vocab.js';
+import System from '@/pages/System.jsx';
 
 import Dashboard from '@/pages/Dashboard.jsx';
 import NewApplication from '@/pages/NewApplication.jsx';
@@ -38,28 +39,53 @@ export default function App() {
   const route = useRoute();
   const snapshot = useConsole();
   const [ready, setReady] = useState(false);
+  const [bootError, setBootError] = useState(null);
   const scrollRef = useRef(null);
+  const [head, appId, screenId] = route.parts;
 
+  const boot = () => {
+    setBootError(null);
+    seed()
+      .then(() => setReady(true))
+      .catch(setBootError);
+  };
+  useEffect(boot, []);
+
+  // A workspace loads its full state (documents, record, job) from the backend on first visit.
   useEffect(() => {
-    seed().then(() => setReady(true));
-  }, []);
+    if (ready && head === 'app' && appId) ensureApplication(appId);
+  }, [ready, head, appId]);
 
   useScrollReset(route.path, scrollRef);
 
   if (!ready) {
     return (
-      <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}>
-        <div className="stack" style={{ alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'grid', placeItems: 'center', height: '100%' }} data-testid="boot-screen">
+        <div className="stack" style={{ alignItems: 'center', gap: 10, maxWidth: 460, textAlign: 'center' }}>
           <div className="rail__mark" style={{ width: 30, height: 30, fontSize: 15 }}>
             R
           </div>
-          <div className="eyebrow">Loading underwriting console…</div>
+          {bootError ? (
+            <>
+              <div className="eyebrow" style={{ color: 'var(--red)' }}>
+                Backend unreachable
+              </div>
+              <div className="sub">{bootError.message}</div>
+              <div className="sub mono" style={{ fontSize: 11.5 }}>
+                Start it with: python -m recaller.cli serve
+                {bootError.requestId ? ` · request ${bootError.requestId}` : ''}
+              </div>
+              <button type="button" className="btn btn--primary btn--sm" onClick={boot}>
+                Retry
+              </button>
+            </>
+          ) : (
+            <div className="eyebrow">Loading underwriting console…</div>
+          )}
         </div>
       </div>
     );
   }
-
-  const [head, appId, screenId] = route.parts;
   const inWorkspace = head === 'app' && appId;
   const application = inWorkspace ? getApplication(appId) : null;
   const record = inWorkspace ? getRecord(appId) : null;
@@ -76,6 +102,7 @@ export default function App() {
       />
       <main className="main">
         <Topbar route={route} application={application} record={record} screen={screen} />
+        {snapshot.lastError && <ErrorBanner error={snapshot.lastError} />}
         <div className="scroll" ref={scrollRef}>
           <Router route={route} application={application} record={record} screen={screen} />
         </div>
@@ -92,6 +119,7 @@ function Router({ route, application, record, screen }) {
   if (!head) return <Dashboard />;
   if (head === 'new') return <NewApplication />;
   if (head === 'policy') return <PolicyView standalone />;
+  if (head === 'system') return <System />;
 
   if (head === 'app') {
     if (!application) {
@@ -171,6 +199,7 @@ function Rail({ route, application, record, screen, snapshot }) {
           on={head === 'policy'}
           onClick={() => navigate('/policy')}
         />
+        <NavItem icon="flow" label="System & diagnostics" on={head === 'system'} onClick={() => navigate('/system')} />
       </div>
 
       {application && (
@@ -212,6 +241,42 @@ function Rail({ route, application, record, screen, snapshot }) {
         </div>
       </div>
     </nav>
+  );
+}
+
+/** Every failed API call lands here with its code and request id, so it can be found in the server log. */
+function ErrorBanner({ error }) {
+  return (
+    <div
+      role="alert"
+      data-testid="error-banner"
+      className="row"
+      style={{
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '9px 16px',
+        background: 'rgba(255,90,95,0.08)',
+        borderBottom: '1px solid rgba(255,90,95,0.3)',
+        fontSize: 12.5,
+      }}
+    >
+      <span>
+        <b style={{ color: 'var(--red)' }}>{error.code ?? 'Error'}</b> {error.message}
+        {error.requestId && (
+          <span className="mono dim" style={{ marginLeft: 8, fontSize: 11 }}>
+            request {error.requestId}
+          </span>
+        )}
+      </span>
+      <span className="row row--tight">
+        <button type="button" className="btn btn--sm btn--ghost" onClick={() => navigate('/system')}>
+          Diagnostics
+        </button>
+        <button type="button" className="btn btn--sm btn--ghost" onClick={clearError} aria-label="Dismiss error">
+          Dismiss
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -264,7 +329,15 @@ function Topbar({ route, application, record, screen }) {
       ) : (
         <>
           <div className="crumbs">
-            <b>{head === 'new' ? 'New application' : head === 'policy' ? 'Policy book' : 'Applications'}</b>
+            <b>
+              {head === 'new'
+                ? 'New application'
+                : head === 'policy'
+                  ? 'Policy book'
+                  : head === 'system'
+                    ? 'System & diagnostics'
+                    : 'Applications'}
+            </b>
           </div>
           <div className="topbar__right">
             <span className="mono dim">

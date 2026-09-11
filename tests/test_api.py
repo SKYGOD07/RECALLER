@@ -117,7 +117,7 @@ class TestSystem(ApiCase):
         self.assertEqual((r.status_code, r.json()["error"]["code"]), (422, "VALIDATION_ERROR"))
         self.assertEqual(self.client.get("/api/nope").json()["error"]["code"], "ROUTE_NOT_FOUND")
         app_id = self.client.post("/api/applications", json=FORM).json()["id"]
-        r = self.client.post(f"/api/applications/{app_id}/underwrite", json={"paced": False})
+        r = self.client.post(f"/api/applications/{app_id}/underwrite?async=true", json={"paced": False})
         self.assertEqual((r.status_code, r.json()["error"]["code"]), (422, "MISSING_DOCUMENTS"))
         r = self.client.post(f"/api/applications/{app_id}/documents", data={"type": "PAN"}, files={"file": ("x.bin", b"\x00\x01garbage", "application/octet-stream")})
         self.assertEqual((r.status_code, r.json()["error"]["code"]), (415, "UNREADABLE_DOCUMENT"))
@@ -130,7 +130,7 @@ class TestSystem(ApiCase):
 
 class TestUnderwriting(ApiCase):
     def test_synthetic_file_end_to_end(self):
-        r = self.client.post("/api/applications/RCL-2026-0418/underwrite", json={"paced": False})
+        r = self.client.post("/api/applications/RCL-2026-0418/underwrite?async=true", json={"paced": False})
         self.assertEqual(r.status_code, 202)
         detail = self.wait("RCL-2026-0418")
         rec = detail["record"]
@@ -144,7 +144,7 @@ class TestUnderwriting(ApiCase):
 
     def test_uploaded_pdfs_are_read_and_decided(self):
         app_id = self.new_app_with_uploads()
-        self.assertEqual(self.client.post(f"/api/applications/{app_id}/underwrite", json={"paced": False}).status_code, 202)
+        self.assertEqual(self.client.post(f"/api/applications/{app_id}/underwrite?async=true", json={"paced": False}).status_code, 202)
         detail = self.wait(app_id)
         self.assertEqual(detail["job"]["status"], "DONE", detail["job"])
         rec = detail["record"]
@@ -161,13 +161,13 @@ class TestUnderwriting(ApiCase):
     def test_missing_field_is_held_then_resumed_by_officer(self):
         docs = {**DOCS, "BANK_STATEMENT": DOCS["BANK_STATEMENT"].replace("Monthly Credits: 38200, 39100, 37600, 40200, 38800, 39500\n", "")}
         app_id = self.new_app_with_uploads(docs)
-        self.client.post(f"/api/applications/{app_id}/underwrite", json={"paced": False})
+        self.client.post(f"/api/applications/{app_id}/underwrite?async=true", json={"paced": False})
         rec = self.wait(app_id)["record"]
         self.assertEqual(rec["status"], "WAITING_FOR_OFFICER")
         held = {h["path"] for h in rec["assist"]["queue"]}
         self.assertIn("bank.monthly_credits", held)
 
-        r = self.client.post(f"/api/applications/{app_id}/resume", json={"resolutions": [], "paced": False})
+        r = self.client.post(f"/api/applications/{app_id}/resume?async=true", json={"resolutions": [], "paced": False})
         self.assertEqual((r.status_code, r.json()["error"]["code"]), (422, "RESOLUTIONS_INCOMPLETE"))
 
         resolutions = [
@@ -175,15 +175,23 @@ class TestUnderwriting(ApiCase):
             if p == "bank.monthly_credits" else {"path": p, "action": "CONFIRM"}
             for p in held
         ]
-        self.assertEqual(self.client.post(f"/api/applications/{app_id}/resume", json={"resolutions": resolutions, "paced": False}).status_code, 202)
+        self.assertEqual(self.client.post(f"/api/applications/{app_id}/resume?async=true", json={"resolutions": resolutions, "paced": False}).status_code, 202)
         rec = self.wait(app_id)["record"]
         self.assertIsNotNone(rec["decision"])
         credits = rec["evidence"]["fields"]["bank.monthly_credits"]
         self.assertEqual((credits["provenance"], credits["value"][0]), ("OFFICER", 38200))
         self.assertTrue(rec["audit_verification"]["ok"])
 
+    def test_default_run_mode_waits_and_returns_the_record(self):
+        r = self.client.post("/api/applications/RCL-2026-0426/underwrite", json={"paced": False})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["decision"]["decision"], "REJECT")
+        self.assertTrue(r.json()["audit_verification"]["ok"])
+        err = self.client.post("/api/applications/RCL-2026-0426/resume", json={"resolutions": [], "paced": False}).json()
+        self.assertEqual((err["error"]["code"], err["detail"]), ("NOT_SUSPENDED", err["error"]["message"]))
+
     def test_sse_stream_reports_stages_and_end(self):
-        self.client.post("/api/applications/RCL-2026-0426/underwrite", json={"paced": False})
+        self.client.post("/api/applications/RCL-2026-0426/underwrite?async=true", json={"paced": False})
         self.wait("RCL-2026-0426")
         with self.client.stream("GET", "/api/applications/RCL-2026-0426/events", params={"once": "true"}) as r:
             self.assertEqual(r.headers["content-type"].split(";")[0], "text/event-stream")
@@ -193,7 +201,7 @@ class TestUnderwriting(ApiCase):
         self.assertEqual([e["id"] for e in log if e.get("type") == "stage" and e.get("status") == "DONE"][-1], "MEMO")
 
     def test_agents_need_a_model(self):
-        self.client.post("/api/applications/RCL-2026-0418/underwrite", json={"paced": False})
+        self.client.post("/api/applications/RCL-2026-0418/underwrite?async=true", json={"paced": False})
         self.wait("RCL-2026-0418")
         r = self.client.post("/api/applications/RCL-2026-0418/agent/review")
         self.assertEqual((r.status_code, r.json()["error"]["code"]), (503, "LLM_NOT_CONFIGURED"))
@@ -213,7 +221,7 @@ class TestAgentsWithScriptedModel(ApiCase):
     provider = ScriptedProvider([scripted_reviewer])
 
     def test_multi_agent_review_and_explanation(self):
-        self.client.post("/api/applications/RCL-2026-0418/underwrite", json={"paced": False})
+        self.client.post("/api/applications/RCL-2026-0418/underwrite?async=true", json={"paced": False})
         self.wait("RCL-2026-0418")
         for kind in ("review", "explain"):
             r = self.client.post(f"/api/applications/RCL-2026-0418/agent/{kind}")

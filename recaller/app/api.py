@@ -179,13 +179,34 @@ def build_router(service: UnderwritingService, request_log: RequestLog, started_
 
     # ---------------------------------------------------------------- runs
 
-    @r.post("/applications/{app_id}/underwrite", tags=["runs"], status_code=202, summary="Start underwriting (background job)")
-    async def underwrite(app_id: str, body: Optional[UnderwriteBody] = None):
-        return {"job": service.start_underwriting(app_id, paced=(body.paced if body else True))}
+    async def _run(app_id: str, job: Dict[str, Any], run_async: bool, response: Response):
+        """``?async=true``: 202 + job, follow it over SSE. Default: wait and return the finished record."""
+        if run_async:
+            response.status_code = 202
+            return {"job": job}
+        await service.jobs.wait(app_id)
+        finished = service.jobs.latest(app_id)
+        if finished and finished.status == "FAILED":
+            raise ServiceError(500, "RUN_FAILED", finished.error or "The run failed.", {"job_id": finished.id})
+        return service.detail(app_id)["record"]
 
-    @r.post("/applications/{app_id}/resume", tags=["runs"], status_code=202, summary="Resume after officer review (background job)")
-    async def resume(app_id: str, body: ResumeBody):
-        return {"job": service.start_resume(app_id, [x.model_dump() for x in body.resolutions], paced=body.paced)}
+    @r.post(
+        "/applications/{app_id}/underwrite",
+        tags=["runs"],
+        summary="Underwrite. Default waits and returns the record; ?async=true returns 202 + job (stream it from /events)",
+    )
+    async def underwrite(app_id: str, response: Response, body: Optional[UnderwriteBody] = None, run_async: bool = Query(False, alias="async")):
+        job = service.start_underwriting(app_id, paced=(body.paced if body else True))
+        return await _run(app_id, job, run_async, response)
+
+    @r.post(
+        "/applications/{app_id}/resume",
+        tags=["runs"],
+        summary="Resume after officer review. Default waits and returns the record; ?async=true returns 202 + job",
+    )
+    async def resume(app_id: str, body: ResumeBody, response: Response, run_async: bool = Query(False, alias="async")):
+        job = service.start_resume(app_id, [x.model_dump() for x in body.resolutions], paced=body.paced)
+        return await _run(app_id, job, run_async, response)
 
     @r.get("/applications/{app_id}/job", tags=["runs"], summary="Latest job for this application, with its events")
     async def job(app_id: str):

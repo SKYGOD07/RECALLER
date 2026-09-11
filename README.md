@@ -13,129 +13,174 @@ lender needs a fast, defensible, auditable decision at a dealership counter.
 > configuration governs thresholds. The audit layer records what happened.**
 
 No language model ever produces an EMI, a FOIR, an LTV, an obligation total or
-a recognised income figure. Models read documents; `packages/credit-engine`
-computes, and it is the only thing that does. This is enforced structurally —
-the engine's inputs are already-extracted, already-confidence-gated field
-values, and its functions are pure.
+a recognised income figure. Models read documents and explain results;
+`recaller/credit_engine` computes, and it is the only thing that does.
 
-## Two separate products
+```
+            n8n  (workflow orchestration — Phase 4)
+             │
+      RECALLER backend  (Python · FastAPI)
+             │
+   ┌─────────┴──────────┐
+ Hermes-based agents     Deterministic core
+ recaller/ai/hermes      extraction → reconciliation → credit engine → policy → decision → memo → audit
+ read · review · explain computes · decides · records
+```
 
-| | |
-|---|---|
-| `frontend/` | The **public presentation site** — what RECALLER is, and where to download it. |
-| `app/` | The **loan officer console** — the working underwriting application. |
-
-They are not merged and must not be. The first sells the product; the second is
-the product.
+## Layout — Python first
 
 ```
 RECALLER/
-├── frontend/            Public presentation / download website
-├── app/                 Loan officer console (the working application)
-├── app-backend/         HTTP API for the console            [Phase 2 - not yet built]
-├── packages/            Deterministic domain logic
-│   ├── core/              money, hashing, audit ledger, shared vocabulary
-│   ├── extraction/        document -> confidence-scored evidence
-│   ├── reconciliation/    cross-document contradiction detection
-│   ├── credit-engine/     EMI, FOIR, LTV, obligations, income recognition
-│   ├── policy-engine/     rule evaluation -> verdict + reason codes
-│   ├── narration/         credit memo assembly
-│   ├── whatif/            exact minimum-change solver
-│   ├── orchestrator/      stage sequencing, pause/resume, replay
-│   └── agent/             AI reasoning runtime ported from Hermes Agent — reads, never computes
-├── policy/              policy.v1.json - every threshold in the system
-├── data/synthetic/      Eight borrower bundles covering every decision path
-├── workflows/           n8n workflow definitions                [Phase 4]
-├── installer/           Windows packaging
-├── scripts/             Launcher, tests, pipeline verification
-├── n8n-master/          n8n source - local reference only, git-ignored
-└── hermes/              Hermes Agent source - local reference only, git-ignored
+├── recaller/                 The product: one Python package
+│   ├── app/                    FastAPI backend: api, service, SQLite, jobs, middleware
+│   ├── documents/              upload reading (PyMuPDF), pattern extractor, extraction router
+│   ├── ai/hermes/              agent layer built on Hermes Agent patterns (MIT)
+│   │   ├── loop.py, registry.py, toolsets.py, delegation.py (delegate_task), providers.py
+│   │   ├── adapter.py            grounded evidence agent, multi-agent review, decision explanation
+│   │   └── skills/               credit-underwriter (ours) · instructor (from Hermes, MIT)
+│   ├── core/  extraction/  reconciliation/  credit_engine/  policy_engine/
+│   ├── narration/  whatif/  orchestrator/  synthetic/
+│   ├── config.py  cli.py
+├── app/                      Loan officer console (React) — a pure HTTP client of the backend
+├── frontend/                 Public presentation site
+├── policy/policy.v1.json     Every threshold in the system
+├── tests/                    pytest: engine, pipeline, agent layer, end-to-end API
+├── scripts/                  Windows launcher, standalone build
+├── workflows/                n8n workflow definitions               [Phase 4]
+├── installer/  winget/       Windows packaging
+├── n8n-master/  hermes/      local reference sources — git-ignored, never published
+└── docs/                     local notes — git-ignored
 ```
 
-`docs/`, `n8n-master/` and `hermes/` are kept on disk for development and are
-not published. What RECALLER uses from Hermes lives in `packages/agent`, ported
-to JavaScript under its MIT licence (see `packages/agent/THIRD_PARTY_NOTICES.md`).
+The console holds no credit logic. Every number on a screen arrived from the
+backend already computed.
 
 ## Running it
 
-### Option A: Windows Package Manager (`winget`)
+**Windows, double-click:** `Start RECALLER.cmd`. It creates `.venv`, installs
+the package on first run, runs the test suite (a failing engine never starts),
+builds the console if needed, serves everything on http://127.0.0.1:4180/ and
+opens a browser.
+
+**Terminal:**
 
 ```powershell
-# Install RECALLER via winget
-winget install SKYGOD07.RECALLER
+python -m venv .venv
+.venv\Scripts\python -m pip install -e ".[dev]"
 
-# Launch Loan Officer Console
-recaller serve
-
-# Run deterministic test suite
-recaller test
+.venv\Scripts\python -m recaller.cli serve          # console + API on :4180, API docs at /docs
+.venv\Scripts\python -m recaller.cli test           # full test suite
 ```
 
-### Option B: Windows Double-Click Launcher
-
-Double-click `Start RECALLER.cmd` in the repository root.
-
-It automatically checks Python 3.10+, installs requirements if needed, verifies the credit engine, builds the console, starts the FastAPI server, and launches your default browser at `http://127.0.0.1:4180/`.
-
-### Option C: Python CLI
+**Console development** (hot reload, every call visible in DevTools → Network):
 
 ```powershell
-# Install Python dependencies
-pip install -e .
-
-# Start the console server
-python -m recaller.cli serve --port 4180
-
-# Run all deterministic engine, pipeline, and agent tests
-python -m recaller.cli test
+.venv\Scripts\python -m recaller.cli serve --reload --no-browser   # backend on :4180
+npm --prefix app install
+npm --prefix app run dev                                           # console on :5180, proxies /api → :4180
 ```
 
-### Option D: Build Standalone Windows Executable & Winget Release
+**Standalone executable:** `python scripts/build_standalone.py` →
+`dist/recaller/recaller.exe` and `dist/recaller-windows-x64.zip`.
 
-```powershell
-python scripts/build_standalone.py
+## The API
+
+Interactive docs at `/docs` (Swagger) and `/redoc`; the schema at `/openapi.json`.
+
+| | |
+|---|---|
+| `GET /api/bootstrap` | policy, vocabulary, stage plan, queue — everything the console needs to start |
+| `POST /api/applications` | create an application |
+| `POST /api/applications/{id}/documents` | upload a PDF / text / image (multipart: `type`, `file`) |
+| `POST /api/applications/{id}/documents/sample` | attach a synthetic sample document |
+| `POST /api/applications/{id}/underwrite` | run the pipeline; waits and returns the record — or `?async=true` → `202` + job |
+| `GET /api/applications/{id}/events` | Server-Sent Events: `snapshot`, `stage`, `end`, `agent` |
+| `POST /api/applications/{id}/resume` | officer resolutions for held fields (same sync/async modes) |
+| `POST /api/applications/{id}/replay` · `whatif` · `simulate` | reproducibility and scenario analysis |
+| `GET /api/applications/{id}/audit/verify` | recompute the audit hash chain |
+| `POST /api/applications/{id}/agent/review` · `explain` | Hermes-based review and explanation (advisory; needs a model) |
+| `GET /api/health` · `/api/diagnostics/{requests,jobs,config}` | health and debugging |
+
+**Debugging a request.** Every response carries `X-Request-ID` (echoed if you
+send one — the console sends `ui-…` ids), `Server-Timing` (shown in DevTools'
+Timing tab) and `X-Response-Time`. Every error has one shape:
+
+```json
+{ "error": { "code": "MISSING_DOCUMENTS", "message": "…", "request_id": "ui-…", "details": { } }, "detail": "…" }
 ```
-Outputs `dist/recaller/recaller.exe` and `dist/recaller-windows-x64.zip`.
 
-## The workflow
+The console's **System & diagnostics** screen shows backend health, the model
+provider, shipped skills, running jobs, the server's request log and this
+browser's own calls with client- and server-side timings side by side.
 
+```bash
+curl -s localhost:4180/api/health
+curl -s -X POST "localhost:4180/api/applications/RCL-2026-0418/underwrite?async=true" -H "Content-Type: application/json" -d '{"paced":false}'
+curl -N "localhost:4180/api/applications/RCL-2026-0418/events?once=true"
 ```
-New application -> Upload documents -> Extraction -> Validation -> Reconciliation
-   -> Confidence gate -> [Officer review if held] -> Credit calculation
-   -> Policy evaluation -> Decision -> Reason codes -> Credit memo -> Audit trail
-```
 
-Thirteen screens follow that path: dashboard, new application, processing,
-evidence, reconciliation, assist, credit analysis, policy, decision, memo,
-audit trail, replay, what-if.
+## Documents and extraction
 
-### What makes it defensible
+Uploaded files are stored under `var/uploads/` and read with PyMuPDF (OCR via
+Tesseract when installed). Each document is routed:
 
-**The confidence gate does not guess.** When extraction confidence falls below
-the policy floor, the run stops, freezes a checkpoint and asks a human. Resume
-rehydrates the checkpoint — documents are not re-read and no model is
-re-invoked. Only the stages after the gate re-run, with the officer's answers
-folded in as officer-provenance evidence.
+| Document | Reader |
+|---|---|
+| synthetic sample | fixture adapter (deterministic demo data) |
+| upload, model configured | Hermes evidence agent, gaps filled by the pattern extractor |
+| upload, no model | pattern extractor (labelled lines, e.g. `On-Road Price: Rs 1,16,000`) |
+| scanned, no OCR | nothing read |
 
-**The audit trail is hash-chained.** Each event carries the digest of its
-predecessor, so the console can verify that nothing was removed or edited after
-the fact, and shows the result.
+Whatever the route, a required field that was not read becomes a
+zero-confidence placeholder, so the **confidence gate stops the run and asks the
+officer** instead of letting the engine run on absent evidence.
 
-**Replay proves reproducibility.** A decided file is re-executed from its own
-frozen evidence with the extraction adapter out of the path entirely. A model
-that has since changed its weights cannot change a historical decision. The
-second mode changes the policy on purpose: same evidence, a different rulebook,
-so a committee can test a cut-off against the back book.
+## The agent layer (Hermes)
 
-**What-if is exact, not interpolated.** The solver re-runs the complete
-pipeline for every candidate and reports the true edge of the feasible region —
-binary search where a lever is monotone, exhaustive evaluation for tenure,
-where a longer term lowers the instalment but raises age at maturity.
+`recaller/ai/hermes` takes what a credit system needs from
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) (MIT; see
+`recaller/ai/hermes/THIRD_PARTY_NOTICES.md`): the tool loop, least-privilege
+toolsets, `delegate_task` for isolated child agents, the skill format, and
+Instructor-validated structured output.
+
+- **Evidence agent** — reads a document's pages. A value enters evidence only
+  through `record_evidence`, which requires a verbatim snippet from the cited
+  page and the value inside that snippet. Numbers are read, never inferred.
+- **Multi-agent review** — a supervisor delegates to KYC, income, invoice and
+  reconciliation reviewers (read-only tools, Pydantic output contracts), then
+  synthesises. Findings are advisory and stored beside the record.
+- **Explanation** — plain-language decision summary; any number or reason code
+  not already in the record gets it rejected in favour of the deterministic text.
+- **The boundary** — the tool registry refuses any tool that decides or computes
+  (`approve_*`, `compute_*`, `*_emi`, `set_policy`…), and a test asserts the agent
+  package imports neither the credit engine nor the policy engine.
+
+Configure a model with `ANTHROPIC_API_KEY` (or `RECALLER_LLM_PROVIDER=anthropic`
+with an `ant auth login` profile); `RECALLER_LLM_MODEL` defaults to
+`claude-opus-5`. Without one, RECALLER runs fully deterministic and the agent
+endpoints answer `503 LLM_NOT_CONFIGURED`. Put settings in a git-ignored `.env`.
+
+## What makes it defensible
+
+**The confidence gate does not guess.** Below the policy floor the run stops,
+freezes a checkpoint and asks a human. Resume rehydrates the checkpoint; the
+officer's answers become `OFFICER`-provenance evidence, and the value they
+replaced is kept.
+
+**The audit trail is hash-chained.** Each event carries its predecessor's digest;
+the backend re-verifies the chain on every read.
+
+**Replay proves reproducibility.** A decided file is re-executed from frozen
+evidence with extraction out of the path. A second mode changes the policy on
+purpose, to test a cut-off against the back book.
+
+**What-if is exact.** The solver re-runs the complete pipeline for every
+candidate and reports the true edge of the feasible region.
 
 ## The synthetic book
 
-Eight borrowers, each exercising a different path. `npm run verify` runs all of
-them and prints what happened:
+Eight borrowers are seeded into the database on first start (`POST /api/reset`
+restores them):
 
 | File | Borrower | Verdict | Exercises |
 |---|---|---|---|
@@ -148,22 +193,18 @@ them and prints what happened:
 | RCL-2026-0445 | Vikram Singh Rathore | APPROVE | Established fleet operator, large ticket |
 | RCL-2026-0449 | Anjali Pawar | REFER | Seasonal income, volatility and conduct |
 
-Every identifier is masked and structurally invalid by construction. Nothing
-here can be mistaken for live KYC material.
+Every identifier is masked and structurally invalid by construction.
 
 ## Status
 
 | Phase | | |
 |---|---|---|
-| 1 | Console shell and all thirteen screens | **done** |
-| 3 | Deterministic domain packages wired in | **done** |
+| 1 | Console and all thirteen screens | **done** |
+| 2 | Python backend: SQLite, uploads, background jobs, SSE, diagnostics | **done** |
+| 3 | Deterministic domain core (Python) | **done** |
 | 5 | Wait / resume human-in-the-loop | **done** |
 | 6 | Audit trail and replay | **done** |
 | 7 | Exact minimum-change what-if | **done** |
 | 8 | Windows launcher and self-check | **done** |
-| 2 | Backend HTTP API | next |
+| 9 | Hermes-based agents: grounded extraction, delegated review, explanation | **done** (needs a model key to run live) |
 | 4 | n8n as the workflow orchestrator | next |
-
-Phases 2 and 4 are a transport change, not a rewrite: every screen already
-talks to `app/src/services/api.js` and nothing else, and each function there
-maps one-to-one onto its future endpoint.

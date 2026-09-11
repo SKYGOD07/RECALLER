@@ -73,28 +73,41 @@ if ($pyMajor -lt 3 -or ($pyMajor -eq 3 -and $pyMinor -lt 10)) {
 }
 Write-Good "Python $pyVerOutput ($PythonCmd)"
 
-# ---- Python packages check ----------------------------------------------
-$reqCheck = & $PythonCmd -c "import fastapi, uvicorn, pydantic; print('OK')" 2>&1
-if ($reqCheck -ne 'OK') {
-  Write-Step 'Installing Python dependencies (fastapi, uvicorn, pydantic)...'
-  & $PythonCmd -m pip install fastapi uvicorn pydantic | Out-Null
+# ---- Project virtual environment ----------------------------------------
+# RECALLER runs from its own .venv, so it never touches - or gets blocked by -
+# a system-managed Python (PEP 668). The first run creates it and installs the
+# package with its dependencies; later runs only check.
+$Venv = Join-Path $Root '.venv'
+$VenvPy = Join-Path $Venv 'Scripts\python.exe'
+if (-not (Test-Path $VenvPy)) {
+  Write-Step 'Creating the project virtual environment (.venv)...'
+  & $PythonCmd -m venv $Venv
   if ($LASTEXITCODE -ne 0) {
-    Write-Bad 'Failed to install Python dependencies via pip.'
-    Write-Host '  Run: pip install fastapi uvicorn pydantic' -ForegroundColor Cyan
-    Write-Host ''
+    Write-Bad 'Could not create the .venv virtual environment.'
     exit 1
   }
-  Write-Good 'Python dependencies installed'
-} else {
-  Write-Good 'Python dependencies present (FastAPI, Uvicorn, Pydantic)'
 }
+$reqCheck = & $VenvPy -c "import fastapi, uvicorn, pydantic, pymupdf, multipart, anthropic, instructor, pytest; print('OK')" 2>&1
+if ($reqCheck -ne 'OK') {
+  Write-Step 'Installing RECALLER and its dependencies into .venv (first run only)...'
+  & $VenvPy -m pip install --upgrade pip | Out-Null
+  & $VenvPy -m pip install -e "$Root[dev]"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Bad 'Dependency installation failed. The pip output above says why.'
+    exit 1
+  }
+  Write-Good 'Dependencies installed into .venv'
+} else {
+  Write-Good 'Dependencies present in .venv (FastAPI, PyMuPDF, Anthropic, Instructor)'
+}
+$PythonCmd = $VenvPy
 
 # ---- Self-check / Test suite --------------------------------------------
 # An unverified credit engine must never reach a loan officer, so a failing
 # self-check stops the launch rather than warning and continuing.
 Write-Step 'Verifying the deterministic credit engine...'
 $env:PYTHONPATH = $Root
-& $PythonCmd -m unittest discover -s (Join-Path $Root 'tests') -p "test_*.py" | Out-Null
+& $PythonCmd -m pytest -q (Join-Path $Root 'tests') | Out-Null
 if ($LASTEXITCODE -ne 0) {
   Write-Bad 'The credit engine self-check failed. RECALLER will not start.'
   Write-Host '  Run this to inspect the failure:' -ForegroundColor White
