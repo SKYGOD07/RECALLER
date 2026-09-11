@@ -50,6 +50,7 @@ class DOC_TYPES:
     PLATFORM_EARNINGS = "PLATFORM_EARNINGS"
     DEALER_INVOICE = "DEALER_INVOICE"
     UTILITY_BILL = "UTILITY_BILL"
+    INFORMANT_REFERENCE = "INFORMANT_REFERENCE"
 
 
 DOC_LABELS = {
@@ -60,6 +61,7 @@ DOC_LABELS = {
     DOC_TYPES.PLATFORM_EARNINGS: "Platform earnings statement",
     DOC_TYPES.DEALER_INVOICE: "Dealer invoice",
     DOC_TYPES.UTILITY_BILL: "Utility bill",
+    DOC_TYPES.INFORMANT_REFERENCE: "Informal-lender reference",
 }
 
 REQUIRED_DOCS = [
@@ -73,6 +75,7 @@ OPTIONAL_DOCS = [
     DOC_TYPES.PLATFORM_EARNINGS,
     DOC_TYPES.DRIVING_LICENCE,
     DOC_TYPES.UTILITY_BILL,
+    DOC_TYPES.INFORMANT_REFERENCE,
 ]
 
 
@@ -82,3 +85,48 @@ class PROVENANCE:
     COMPUTED = "COMPUTED"  # produced by the deterministic engine
     POLICY = "POLICY"  # read from the policy document
     DECLARED = "DECLARED"  # stated by the applicant, unverified
+    INFORMANT = "INFORMANT"  # attested by a named third party who has lent to the applicant
+
+
+class INFORMANT_RELATIONSHIP:
+    """How the informant came to lend to this borrower.
+
+    A thin-file borrower usually has a credit history; it just was never written
+    down by a regulated lender. These are the counterparties who did the lending.
+    """
+
+    INFORMAL_LENDER = "INFORMAL_LENDER"  # a private moneylender
+    SHOPKEEPER_CREDIT = "SHOPKEEPER_CREDIT"  # goods advanced on a running account
+    CHIT_FUND = "CHIT_FUND"  # rotating savings and credit association
+    SHG = "SHG"  # self-help group
+    EMPLOYER_ADVANCE = "EMPLOYER_ADVANCE"  # salary or fleet advance
+    FAMILY = "FAMILY"  # relative or household member
+
+    ALL = (
+        INFORMAL_LENDER,
+        SHOPKEEPER_CREDIT,
+        CHIT_FUND,
+        SHG,
+        EMPLOYER_ADVANCE,
+        FAMILY,
+    )
+
+
+INFORMANT_RELATIONSHIP_LABELS = {
+    INFORMANT_RELATIONSHIP.INFORMAL_LENDER: "Private moneylender",
+    INFORMANT_RELATIONSHIP.SHOPKEEPER_CREDIT: "Shopkeeper running account",
+    INFORMANT_RELATIONSHIP.CHIT_FUND: "Chit fund",
+    INFORMANT_RELATIONSHIP.SHG: "Self-help group",
+    INFORMANT_RELATIONSHIP.EMPLOYER_ADVANCE: "Employer advance",
+    INFORMANT_RELATIONSHIP.FAMILY: "Family",
+}
+
+# An informant attests; it never verifies. A relationship with no arm's-length
+# character cannot carry the same weight as one that does, so the engine treats
+# these as decoration on the file rather than as a credit reference.
+INFORMANT_ARMS_LENGTH = (
+    INFORMANT_RELATIONSHIP.INFORMAL_LENDER,
+    INFORMANT_RELATIONSHIP.SHOPKEEPER_CREDIT,
+    INFORMANT_RELATIONSHIP.CHIT_FUND,
+    INFORMANT_RELATIONSHIP.SHG,
+)

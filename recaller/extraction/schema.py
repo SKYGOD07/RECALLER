@@ -44,6 +44,27 @@ EVIDENCE_SPEC = [
     {"path": "invoice.accessories", "label": "Accessories", "type": "money", "doc": DOC_TYPES.DEALER_INVOICE, "critical": False},
     {"path": "invoice.on_road_price", "label": "On-road price", "type": "money", "doc": DOC_TYPES.DEALER_INVOICE, "critical": True},
     {"path": "invoice.subsidy", "label": "FAME / state subsidy applied", "type": "money", "doc": DOC_TYPES.DEALER_INVOICE, "critical": False},
+
+    # Informal-lender reference. A named third party who has actually lent to
+    # this borrower states what they lent and how they were repaid. It is an
+    # attestation, never a verification: it can add an obligation the bank
+    # statement never showed, and it can corroborate a repayment record no
+    # bureau holds, but it can never on its own loosen a policy limit.
+    {"path": "informant.name", "label": "Informant name", "type": "text", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.relationship", "label": "Lending relationship", "type": "text", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.business_name", "label": "Informant business", "type": "text", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.contact", "label": "Informant contact (masked)", "type": "text", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.contact_verified", "label": "Contact verified by officer", "type": "flag", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.borrower_known_as", "label": "Borrower known to informant as", "type": "text", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.months_known", "label": "Months of lending relationship", "type": "number", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.principal_lent", "label": "Total principal lent", "type": "money", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.current_outstanding", "label": "Currently outstanding", "type": "money", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": True, "attested": True},
+    {"path": "informant.monthly_repayment", "label": "Monthly repayment to informant", "type": "money", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": True, "attested": True},
+    {"path": "informant.missed_payments_12m", "label": "Missed payments (last 12 months)", "type": "number", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.longest_delay_days", "label": "Longest delay (days)", "type": "number", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.would_lend_again", "label": "Would lend again", "type": "flag", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.attested_at", "label": "Attested on", "type": "date", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
+    {"path": "informant.note", "label": "Informant note", "type": "text", "doc": DOC_TYPES.INFORMANT_REFERENCE, "critical": False, "attested": True},
 ]
 
 SPEC_BY_PATH = {s["path"]: s for s in EVIDENCE_SPEC}
