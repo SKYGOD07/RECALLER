@@ -205,6 +205,12 @@
   translate: -50% -40%;
   transform-origin: 50% 0%;
 }
+/* Stacked cards must be opaque, or earlier evidence bleeds through the active card. */
+.deck__card .ev {
+  background: linear-gradient(180deg, #121213, #0c0c0d);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 
 .ev {
   position: relative;
