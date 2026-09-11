@@ -25,13 +25,16 @@ from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel
 
-from .loop import DEFAULT_MAX_ITERATIONS, run_agent
+from ...config import DEFAULTS, get_int
+from .loop import run_agent
 from .registry import ToolRegistry
 from .structured import schema_instruction, validate_reply
 
 DELEGATE_BLOCKED_TOOLS = ["delegate_task"]
-DEFAULT_MAX_DEPTH = 1  # the top-level agent may delegate; its children are leaves
-DEFAULT_MAX_CHILDREN = 4
+# A safety bound, not a tunable: the top-level agent may delegate; its children are leaves.
+DEFAULT_MAX_DEPTH = 1
+# Shipped default; RECALLER_AGENT_MAX_CHILDREN overrides it at run time.
+DEFAULT_MAX_CHILDREN = int(DEFAULTS["RECALLER_AGENT_MAX_CHILDREN"])
 
 DELEGATE_TASK_SCHEMA = {
     "type": "object",
@@ -74,10 +77,11 @@ async def delegate_task(
     parent: Optional[Dict[str, Any]] = None,
     output_model: Optional[Type[BaseModel]] = None,
     max_depth: int = DEFAULT_MAX_DEPTH,
-    max_children: int = DEFAULT_MAX_CHILDREN,
-    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    max_children: Optional[int] = None,
+    max_iterations: Optional[int] = None,  # None: RECALLER_AGENT_MAX_ITERATIONS, resolved by run_agent
     system_prefix: str = "",
 ) -> Dict[str, Any]:
+    max_children = max_children or get_int("RECALLER_AGENT_MAX_CHILDREN", minimum=1)
     parent = parent or {}
     depth = int(parent.get("depth", 0))
     if depth >= max_depth:

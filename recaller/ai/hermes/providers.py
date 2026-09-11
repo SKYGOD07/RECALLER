@@ -14,18 +14,26 @@ All three satisfy the same small protocol, which is all the loop needs:
     async complete(*, system, messages, tools) -> ModelReply
     async structured(*, response_model, system, prompt, max_retries) -> BaseModel   [optional]
 
-Selection (``provider_from_env``):
+Selection (``provider_from_env``). Values come from the environment or ``.env``;
+defaults live in ``recaller/config.py`` (``DEFAULTS``), documented in ``.env.example``:
   RECALLER_LLM_PROVIDER=auto        Anthropic if ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN is set,
                                     else Ollama if OLLAMA_HOST / OLLAMA_API_KEY is set, else none
   RECALLER_LLM_PROVIDER=anthropic   always Anthropic (also works with an `ant auth login` profile)
   RECALLER_LLM_PROVIDER=ollama      always Ollama
   RECALLER_LLM_PROVIDER=none        no model; RECALLER runs fully deterministic
-  RECALLER_LLM_MODEL                default claude-opus-5 (Anthropic) / llama3.1 (Ollama)
+  RECALLER_LLM_MODEL                overrides RECALLER_ANTHROPIC_MODEL / RECALLER_OLLAMA_MODEL
   RECALLER_LLM_EFFORT               Anthropic only: low | medium | high | xhigh | max
   RECALLER_LLM_TEMPERATURE          Ollama only, default 0 — underwriting wants repeatable reads
+  RECALLER_LLM_TIMEOUT, RECALLER_LLM_MAX_TOKENS
 
-  OLLAMA_HOST                       default http://127.0.0.1:11434; use https://ollama.com for Cloud
+  OLLAMA_HOST                       a local server by default. Unset with OLLAMA_API_KEY set means
+                                    Ollama Cloud (RECALLER_OLLAMA_CLOUD_HOST, https://ollama.com)
   OLLAMA_API_KEY                    Ollama Cloud key. A local server needs none.
+  RECALLER_OLLAMA_THINK             true | false | low | medium | high; unset leaves it to the model
+
+Ollama Cloud's own API names a model without the ``:cloud`` / ``-cloud`` suffix
+the local daemon uses (``nemotron-3-ultra``, not ``nemotron-3-ultra:cloud``); the
+suffix is dropped when talking to Cloud directly, and /api/health says so.
 
 Whichever provider is configured, it only ever reads documents and explains a
 finished decision. No provider is reachable from the credit engine, the policy
@@ -35,18 +43,27 @@ decide or compute a credit outcome.
 
 from __future__ import annotations
 
-import os
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Type, TypeVar, Union
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
+from ...config import DEFAULTS, ConfigError, get_float, get_int, get_optional_int, is_set, raw
 from .structured import generate_structured
 
-DEFAULT_ANTHROPIC_MODEL = "claude-opus-5"
-DEFAULT_OLLAMA_MODEL = "llama3.1"
-DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
+# Shipped defaults, from the one table in recaller/config.py; the environment overrides each.
+DEFAULT_ANTHROPIC_MODEL = DEFAULTS["RECALLER_ANTHROPIC_MODEL"]
+DEFAULT_OLLAMA_MODEL = DEFAULTS["RECALLER_OLLAMA_MODEL"]
+DEFAULT_OLLAMA_HOST = DEFAULTS["OLLAMA_HOST"]
+OLLAMA_CLOUD_HOST = DEFAULTS["RECALLER_OLLAMA_CLOUD_HOST"]
+DEFAULT_TIMEOUT = float(DEFAULTS["RECALLER_LLM_TIMEOUT"])
+DEFAULT_MAX_TOKENS = int(DEFAULTS["RECALLER_LLM_MAX_TOKENS"])
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
+_THINK_BLOCK = re.compile(r"<think>[\s\S]*?</think>", re.I)
+_THINK_LEVELS = ("low", "medium", "high")
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -77,9 +94,9 @@ class AnthropicProvider:
         self,
         model: str = DEFAULT_ANTHROPIC_MODEL,
         *,
-        max_tokens: int = 16000,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         effort: Optional[str] = None,
-        timeout: float = 180.0,
+        timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         import anthropic
 
@@ -216,7 +233,8 @@ class OllamaProvider:
         temperature: float = 0.0,
         num_ctx: Optional[int] = None,
         keep_alive: Optional[str] = None,
-        timeout: float = 300.0,
+        think: Union[bool, str, None] = None,
+        timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         self.model = model
         self.host = str(host).rstrip("/")
@@ -224,6 +242,7 @@ class OllamaProvider:
         self.temperature = temperature
         self.num_ctx = num_ctx
         self.keep_alive = keep_alive
+        self.think = think
         self.timeout = timeout
 
     # -- translation --------------------------------------------------------------
@@ -285,6 +304,12 @@ class OllamaProvider:
             options["num_ctx"] = self.num_ctx
         return options
 
+    def _common(self, body: Dict[str, Any]) -> None:
+        if self.keep_alive:
+            body["keep_alive"] = self.keep_alive
+        if self.think is not None:
+            body["think"] = self.think
+
     def _headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -329,8 +354,7 @@ class OllamaProvider:
         }
         if tools:
             body["tools"] = self.to_api_tools(tools)
-        if self.keep_alive:
-            body["keep_alive"] = self.keep_alive
+        self._common(body)
 
         payload = await self._post("/api/chat", body)
         return self._to_reply(payload)
@@ -348,8 +372,11 @@ class OllamaProvider:
                 continue
             calls.append({"id": call.get("id") or f"ollama_{i}", "name": name, "arguments": fn.get("arguments") or {}})
 
+        # Reasoning models return their thinking in message.thinking; older builds
+        # inline it as <think>…</think>. Either way it is not the answer.
+        content = _THINK_BLOCK.sub("", str(message.get("content") or "")).strip()
         return ModelReply(
-            content=str(message.get("content") or ""),
+            content=content,
             tool_calls=calls,
             # The loop only distinguishes "there are tool calls" from "there are not";
             # done_reason is carried through for anything that wants the detail.
@@ -381,8 +408,7 @@ class OllamaProvider:
                 "format": schema,
                 "options": self._options(),
             }
-            if self.keep_alive:
-                body["keep_alive"] = self.keep_alive
+            self._common(body)
 
             reply = self._to_reply(await self._post("/api/chat", body))
             value, errors = validate_reply(reply.content, response_model)
@@ -409,9 +435,14 @@ def _ollama_error(resp: Any, model: str, host: str) -> str:
     except ValueError:
         detail = (resp.text or "").strip()
 
+    cloud = is_cloud_host(host)
     if resp.status_code == 404 and "model" in detail.lower():
+        if cloud:
+            return f'Ollama Cloud has no model "{model}". Cloud model names are listed at https://ollama.com/search?c=cloud.'
         return f'Ollama has no model "{model}". Pull it first: ollama pull {model}'
     if resp.status_code in (401, 403):
+        if cloud:
+            return "Ollama Cloud rejected OLLAMA_API_KEY. Create a key at https://ollama.com/settings/keys, put it in .env and restart."
         return "Ollama rejected the credentials. Check OLLAMA_API_KEY."
     if resp.status_code == 429:
         return "Rate limited by Ollama; retry shortly."
