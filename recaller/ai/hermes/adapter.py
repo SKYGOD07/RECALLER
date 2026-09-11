@@ -346,7 +346,8 @@ async def explain_decision(provider: Any, record: Dict[str, Any]) -> Dict[str, A
             system=_underwriter_prompt(["reason-codes"]),
             prompt=(
                 "Explain this credit decision to the loan officer in plain language: the verdict, the reason codes "
-                "that drove it, and anything a human changed. Quote figures exactly as given; introduce none.\n\n"
+                "that drove it, and anything a human changed, in two to five short paragraphs. Quote figures exactly "
+                "as given; introduce none.\n\n"
                 + json.dumps(context, default=str, ensure_ascii=False)
             ),
         )

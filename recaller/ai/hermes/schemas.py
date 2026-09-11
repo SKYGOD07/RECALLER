@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import List, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ReviewArea = Literal["KYC", "INCOME", "INVOICE", "RECONCILIATION", "GENERAL"]
 Severity = Literal["INFO", "ADVISORY", "CONCERN"]
@@ -41,3 +41,14 @@ class DecisionExplanation(BaseModel):
     headline: str = Field(min_length=10, max_length=300)
     paragraphs: List[str] = Field(min_length=1, max_length=5)
     cited_reason_codes: List[str] = Field(default_factory=list)
+
+    @field_validator("paragraphs", mode="before")
+    @classmethod
+    def _first_five(cls, v):
+        # JSON-schema decoding (Ollama) does not enforce array length, and models
+        # often split one idea over several paragraphs. Keep the first five rather
+        # than discard a sound explanation over its layout; the numeric guard
+        # still checks every paragraph kept.
+        if isinstance(v, list):
+            v = [p for p in v if str(p).strip()][:5]
+        return v

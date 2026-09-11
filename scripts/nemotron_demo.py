@@ -7,6 +7,8 @@ and figure comes from the deterministic engines. Results are written as they
 arrive to var/nemotron-demo/ (git-ignored): results.json and report.md.
 
   .venv\\Scripts\\python scripts\\nemotron_demo.py [--base http://127.0.0.1:4180] [--only RCL-2026-0418] [--parallel 2]
+  .venv\\Scripts\\python scripts\\nemotron_demo.py --collect     rebuild the report from the runs already on the
+                                                              server (waits for running ones; starts nothing)
 """
 
 from __future__ import annotations
@@ -26,7 +28,10 @@ QUESTION = (
     "Walk me through why this file got its decision: the reason codes that drove it, the figures behind them, "
     "and anything in the evidence or reconciliation I should double-check. Cite where each fact comes from."
 )
-PER_FILE_LIMIT_S = 1800
+# A hosted reasoning model behind a concurrency cap can take well over half an
+# hour for a four-reviewer review; past this the report says TIMEOUT and --collect
+# picks the finished run up later.
+PER_FILE_LIMIT_S = 3600
 
 
 def log(msg: str) -> None:
@@ -96,6 +101,7 @@ async def run_file(client: httpx.AsyncClient, app: Dict[str, Any]) -> Dict[str, 
                     log(f"{app_id} {kind} {run['status']}")
         for kind in pending:
             out[kind] = {"status": "TIMEOUT"}
+            log(f"{app_id} {kind} TIMEOUT (still running on the server; --collect picks it up)")
 
         r = await ask_task
         out["ask"] = r.json() if r.status_code == 200 else {"status": "FAILED", "error": r.json().get("error")}
