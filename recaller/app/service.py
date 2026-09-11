@@ -16,12 +16,12 @@ from typing import Any, Dict, List, Optional
 
 import pymupdf
 
-from ..ai.hermes import AgentExtractionAdapter, explain_decision, provider_status, review_file
+from ..ai.hermes import AgentExtractionAdapter, ProviderError, check_provider, explain_decision, provider_status, review_file
 from ..core.audit import verify_ledger
 from ..core.constants import APP_STATUS, DOC_LABELS, DOC_TYPES, OPTIONAL_DOCS, REQUIRED_DOCS, WORKFLOW_VERSION
 from ..core.hash import hash_value
 from ..credit_engine.engine import calculate_emi
-from ..documents.pdf import ocr_available, read_document
+from ..documents.pdf import ACCEPTED_TYPES, ocr_available, read_document
 from ..documents.router import RoutedExtractionAdapter
 from ..orchestrator.pipeline import (
     STAGE_PLAN,
@@ -35,12 +35,11 @@ from ..synthetic.data import SYNTHETIC_APPLICATIONS
 from .db import Database, now_iso
 from .jobs import JobConflict, JobManager
 
-# Seconds each stage is held open when a run is paced, modelled on real
-# document-understanding latency. The ledger records real engine time regardless.
-STAGE_PACING = {
-    "INGEST": 0.38, "KYC": 0.90, "BANK": 1.50, "PLATFORM": 0.85, "INVOICE": 0.78, "VALIDATE": 0.42,
-    "RECONCILE": 0.62, "GATE": 0.34, "CREDIT": 0.52, "POLICY": 0.46, "DECISION": 0.38, "MEMO": 0.70,
-}
+_NO_MODEL = (
+    "No model is configured. Put the model settings in .env at the repository root (see .env.example) — "
+    "ANTHROPIC_API_KEY for Claude, or RECALLER_LLM_PROVIDER=ollama with OLLAMA_API_KEY for Ollama Cloud — "
+    "and restart. Underwriting itself is fully deterministic and does not need one."
+)
 _RUNTIME_KEYS = ("scenario", "status", "decision", "updated_at", "custom", "document_count", "last_error", "last_job")
 _ALL_DOC_TYPES = {v for k, v in vars(DOC_TYPES).items() if not k.startswith("_")}
 
@@ -79,7 +78,7 @@ class UnderwritingService:
                 self.db.save_application(header)
                 for doc in app["documents"]:
                     self.db.add_document(self._synthetic_row(app["id"], doc))
-            self.db.set_meta("app_sequence", "500")
+            self.db.set_meta("app_sequence", str(self.settings.app_sequence_start))
             self.db.set_meta("seeded", "1")
 
     @staticmethod
@@ -228,10 +227,13 @@ class UnderwritingService:
     def create_application(self, form: Dict[str, Any]) -> Dict[str, Any]:
         if form["segment"] not in self.policy.get("segments", {}):
             raise ServiceError(422, "UNKNOWN_SEGMENT", f"Unknown asset segment {form['segment']}.")
-        seq = self.db.next_sequence()
+        while True:  # skip any id already taken (a changed format can reach a seeded one)
+            app_id = self.settings.format_app_id(self.db.next_sequence(self.settings.app_sequence_start))
+            if self.db.get_application(app_id) is None:
+                break
         ts = now_iso()
         header = {
-            "id": f"RCL-2026-0{seq}",
+            "id": app_id,
             "borrower_name": form["borrower_name"].strip(),
             "segment": form["segment"],
             "loan_amount": float(form["loan_amount"]),
@@ -378,7 +380,7 @@ class UnderwritingService:
                 self._progress.setdefault(app_id, _blank_progress())[event["id"]] = event.get("status")
             await emit(event)
             if paced and self.settings.stage_pacing and event.get("status") == "RUNNING":
-                await asyncio.sleep(STAGE_PACING.get(event.get("id"), 0.4))
+                await asyncio.sleep(self.settings.pacing_for(event.get("id")))
 
         return on_stage
 
@@ -495,12 +497,7 @@ class UnderwritingService:
 
     def start_agent_run(self, app_id: str, kind: str) -> Dict[str, Any]:
         if self.provider is None:
-            raise ServiceError(
-                503, "LLM_NOT_CONFIGURED",
-                "No model is configured. Set ANTHROPIC_API_KEY, or run a local model with "
-                "RECALLER_LLM_PROVIDER=ollama (OLLAMA_HOST, and OLLAMA_API_KEY for Ollama Cloud), and restart. "
-                "Underwriting itself is fully deterministic and does not need one.",
-            )
+            raise ServiceError(503, "LLM_NOT_CONFIGURED", _NO_MODEL)
         record = self.require_record(app_id, decided=True)
         if any(r["status"] == "RUNNING" and r["kind"] == kind for r in self.db.list_agent_runs(app_id)):
             raise ServiceError(409, "AGENT_RUNNING", f"A {kind} run is already in progress for {app_id}.")
@@ -531,6 +528,19 @@ class UnderwritingService:
             self._agent_tasks.pop(run["id"], None)
             self.jobs.publish(run["app_id"], {"type": "agent", "run_id": run["id"], "kind": run["kind"], "status": run["status"]})
 
+    async def check_llm(self) -> Dict[str, Any]:
+        """Send the configured model one short prompt and return exactly what came back."""
+        if self.provider is None:
+            raise ServiceError(503, "LLM_NOT_CONFIGURED", _NO_MODEL, {"llm": self.status()["llm"]})
+        who = {"provider": getattr(self.provider, "name", "custom"), "model": getattr(self.provider, "model", None)}
+        try:
+            result = await check_provider(self.provider)
+        except ProviderError as exc:
+            raise ServiceError(502, "LLM_UNREACHABLE", str(exc), {**who, "upstream_status": exc.status}) from exc
+        except Exception as exc:
+            raise ServiceError(502, "LLM_UNREACHABLE", f"{type(exc).__name__}: {exc}", who) from exc
+        return {**result, "llm": self.status()["llm"]}
+
     async def wait_for_agents(self) -> None:
         if self._agent_tasks:
             await asyncio.gather(*self._agent_tasks.values(), return_exceptions=True)
@@ -557,6 +567,6 @@ class UnderwritingService:
                 "decisions": list(DECISIONS.ALL),
                 "stage_labels": STAGE_LABELS,
             },
-            "limits": {"max_upload_mb": self.settings.max_upload_mb, "accepted_types": ["application/pdf", "text/plain", "image/png", "image/jpeg"]},
+            "limits": {"max_upload_mb": self.settings.max_upload_mb, "accepted_types": sorted(ACCEPTED_TYPES)},
             "llm": self.status()["llm"],
         }
