@@ -19,6 +19,7 @@ import {
   ceilingTone,
   Money,
 } from '@/components/ui.jsx';
+import AgentPanel from '@/components/AgentPanel.jsx';
 import { POLICY } from '@/services/api.js';
 import { formatINR, formatPct } from '@/lib/format.js';
 import { PROVENANCE } from '@/lib/vocab.js';
@@ -292,6 +293,10 @@ export default function Decision({ application, record }) {
             </button>
           </Card>
         </aside>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <AgentPanel appId={application.id} />
       </div>
     </div>
   );
