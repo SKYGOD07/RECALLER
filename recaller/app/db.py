@@ -214,6 +214,13 @@ class Database:
         rows = self._all("SELECT result FROM replays WHERE app_id=? ORDER BY id DESC LIMIT ?", (app_id, limit))
         return [json.loads(r["result"]) for r in rows]
 
+    def interrupt_running_agent_runs(self, reason: str) -> int:
+        """Mark runs a previous server process left RUNNING as FAILED; returns how many."""
+        cur = self._exec(
+            "UPDATE agent_runs SET status='FAILED', error=?, finished_at=? WHERE status='RUNNING'", (reason, now_iso())
+        )
+        return cur.rowcount
+
     def save_agent_run(self, run: Dict[str, Any]) -> None:
         self._exec(
             """INSERT INTO agent_runs(id,app_id,kind,status,provider,model,started_at,finished_at,output,error)

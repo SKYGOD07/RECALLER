@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from recaller.ai.hermes import OllamaProvider, ScriptedProvider, check_provider, provider_from_env, provider_status
+from recaller.ai.hermes import OllamaProvider, ProviderError, ScriptedProvider, check_provider, provider_from_env, provider_status
 from recaller.ai.hermes.providers import cloud_model_name, parse_think
 from recaller.app.server import create_app
 from recaller.config import DEFAULTS, ConfigError, Settings, effective_config, get_int, stage_seconds
@@ -92,6 +92,30 @@ class TestOllamaCloud(unittest.TestCase):
     def test_check_provider_returns_the_reply(self):
         result = asyncio.run(check_provider(ScriptedProvider([{"content": " Ready. "}])))
         self.assertEqual((result["ok"], result["reply"], result["provider"]), (True, "Ready.", "scripted"))
+
+
+class TestRateLimits(unittest.TestCase):
+    def test_rate_limits_are_retried_then_reported(self):
+        class Flaky(OllamaProvider):
+            calls = 0
+
+            async def _post_once(self, path, body):
+                Flaky.calls += 1
+                if Flaky.calls < 3:
+                    raise ProviderError("Rate limited by Ollama; retry shortly.", status=429, retryable=True, retry_after=0.01)
+                return {"message": {"content": "ok"}}
+
+        reply = asyncio.run(Flaky(max_retries=4).complete(system="", messages=[], tools=[]))
+        self.assertEqual((reply.content, Flaky.calls), ("ok", 3))
+
+        Flaky.calls = 0
+        with self.assertRaises(ProviderError) as ctx:
+            asyncio.run(Flaky(max_retries=1).complete(system="", messages=[], tools=[]))
+        self.assertIn("gave up after 1 retries", str(ctx.exception))
+
+    def test_limits_come_from_config(self):
+        p = provider_from_env({**NEMOTRON, "RECALLER_LLM_RETRIES": "0", "RECALLER_LLM_CONCURRENCY": "1"})
+        self.assertEqual((p.max_retries, p._gate._value), (0, 1))
 
 
 class TestApiReadsSettings(unittest.TestCase):

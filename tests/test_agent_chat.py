@@ -55,5 +55,19 @@ class TestAsk(unittest.TestCase):
                 self.assertEqual(c.post("/api/applications/RCL-2026-0418/agent/ask", json={"question": ""}).status_code, 422)
 
 
+class TestRestart(unittest.TestCase):
+    def test_runs_left_running_by_a_dead_server_are_failed_on_startup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first = create_app(settings_for(tmp), provider=None)
+            with TestClient(first):
+                first.state.service.db.save_agent_run(
+                    {"id": "AGR-orphan", "app_id": "RCL-2026-0418", "kind": "review", "status": "RUNNING"}
+                )
+            with TestClient(create_app(settings_for(tmp), provider=None)) as c:
+                run = c.get("/api/applications/RCL-2026-0418/agent-runs").json()[0]
+                self.assertEqual(run["status"], "FAILED")
+                self.assertIn("Interrupted", run["error"])
+
+
 if __name__ == "__main__":
     unittest.main()
