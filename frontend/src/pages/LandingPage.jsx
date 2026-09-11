@@ -1,5 +1,6 @@
 import { MotionConfig } from 'framer-motion'
 import Nav from '@/components/Nav.jsx'
+import Cursor from '@/components/ui/inverted-cursor.tsx'
 import Agents from '@/sections/Agents.jsx'
 import Audit from '@/sections/Audit.jsx'
 import Decision from '@/sections/Decision.jsx'
@@ -19,6 +20,7 @@ import WhatIf from '@/sections/WhatIf.jsx'
 export default function LandingPage() {
   return (
     <MotionConfig reducedMotion="user">
+      <Cursor size={42} />
       <a className="skip-link" href="#problem">
         Skip to content
       </a>
