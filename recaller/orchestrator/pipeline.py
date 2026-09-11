@@ -72,7 +72,8 @@ def make_clock(now: Optional[str] = None) -> Callable[[], str]:
 
 
 def strip_payload(doc: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: v for k, v in doc.items() if k not in ("payload", "degrade")}
+    # "_"-prefixed keys (e.g. _pages_text) are transport-only and never enter the record.
+    return {k: v for k, v in doc.items() if k not in ("payload", "degrade") and not k.startswith("_")}
 
 
 def round4(n: Any) -> float:

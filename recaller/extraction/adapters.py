@@ -212,7 +212,27 @@ def coerce(value: Any, val_type: str) -> Any:
             return float(cleaned) if "." in cleaned else int(cleaned)
         except (ValueError, TypeError):
             return None
+    if val_type == "list":
+        return coerce_list(value)
     return value
+
+
+def coerce_list(value: Any) -> List[Any]:
+    """Officer-entered lists: "33200, 35100, …" → numbers; "Bajaj EMI 2400; Phone 1200" → obligations."""
+    if isinstance(value, list):
+        return value
+    text = str(value or "")
+    if re.search(r"[A-Za-z]", text):
+        items = []
+        for part in re.split(r"[;\n]", text):
+            m = re.search(r"(\d[\d,]*(?:\.\d+)?)\s*$", part.strip())
+            if not m:
+                continue  # "none" / "nil" → no obligations
+            label = part.strip()[: m.start()].strip(" -:,") or "Officer-entered obligation"
+            items.append({"label": label, "amount": float(m.group(1).replace(",", "")), "kind": "LOAN_EMI", "source": "Officer entry"})
+        return items
+    nums = [n.replace(",", "") for n in re.findall(r"\d[\d,]*(?:\.\d+)?", text)]
+    return [float(n) if "." in n else int(n) for n in nums]
 
 
 def apply_officer_resolutions(
