@@ -18,7 +18,7 @@ from ..core.constants import (
 )
 from ..core.hash import hash_value, make_id
 from ..core.money import round_half_up
-from ..credit_engine.engine import compute_credit_metrics
+from ..credit_engine.engine import compute_evidence_strength, compute_credit_metrics
 from ..extraction.adapters import (
     apply_confidence_gate,
     apply_officer_resolutions,
@@ -342,6 +342,11 @@ async def run_underwriting(
             "policyEvaluation": None,
             "decision": None,
             "memo": None,
+            # Scored even here — especially here. A held file is exactly the one
+            # an officer needs to know the footing of before they answer anything.
+            "evidence_strength": compute_evidence_strength(
+                fields=fields, values=values, reconciliation=reconciliation, policy=policy
+            ),
             "audit": box["ledger"],
             "checkpoint": {
                 "created_at": clock(),
@@ -559,6 +564,15 @@ async def finalise(
 
     decision = await tick("DECISION", run_decision)
 
+    # How much of the file we actually know, scored from the same evidence the
+    # decision was made on. It explains the decision's footing; it never alters it.
+    evidence_strength = compute_evidence_strength(
+        fields=(base.get("evidence") or {}).get("fields"),
+        values=values,
+        reconciliation=reconciliation,
+        policy=policy,
+    )
+
     record = {
         **base,
         "status": DECISION_TO_STATUS.get(dec_val, APP_STATUS.REFERRED),
@@ -571,6 +585,7 @@ async def finalise(
         "credit": credit,
         "policyEvaluation": policy_eval,
         "decision": decision,
+        "evidence_strength": evidence_strength,
         "audit": box["ledger"],
         "generated_at": clock(),
         "checkpoint": None,

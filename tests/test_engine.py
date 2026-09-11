@@ -9,6 +9,8 @@ from recaller.core.audit import append_event, create_ledger, verify_ledger
 from recaller.core.hash import hash_value, rng, stable_stringify
 from recaller.core.money import format_inr, round_half_up, sum_rupees, to_paise, to_rupees
 from recaller.credit_engine.engine import (
+    band_for,
+    compute_evidence_strength,
     amortisation_schedule,
     calculate_emi,
     calculate_foir,
@@ -414,6 +416,99 @@ class TestRecallerEngine(unittest.TestCase):
             self.policy["confidence"]["critical_field_threshold"]
             > self.policy["confidence"]["field_threshold"]
         )
+
+
+class TestEvidenceStrength(unittest.TestCase):
+    """Evidence strength scores the file, never the borrower. It must move only
+    when the evidence moves, and it must never reach the decision."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.policy = json.loads((ROOT / "policy" / "policy.v1.json").read_text(encoding="utf-8"))
+
+    def bundle(self, *, months=6, platform=True, confidence=0.95):
+        fields = {
+            p: {"path": p, "confidence": confidence, "critical": True}
+            for p in self.policy["confidence"]["critical_fields"]
+        }
+        fields["invoice.model"] = {"path": "invoice.model", "confidence": 0.99, "critical": False}
+        values = {
+            "bank": {"monthly_credits": [30000] * months},
+            "invoice": {"on_road_price": 118000},
+        }
+        if platform:
+            values["platform"] = {"monthly_net": [30000] * months}
+        return fields, values
+
+    def score(self, *, reconciliation=None, **kw):
+        fields, values = self.bundle(**kw)
+        return compute_evidence_strength(
+            fields=fields,
+            values=values,
+            reconciliation=reconciliation or {"blocking": 0, "advisory": 0, "total": 8},
+            policy=self.policy,
+        )
+
+    def test_a_complete_corroborated_file_scores_high(self):
+        result = self.score()
+        self.assertGreaterEqual(result["score"], 80)
+        self.assertEqual(result["band"], "STRONG")
+        self.assertEqual(sum(c["max"] for c in result["components"]), 100)
+
+    def test_one_blocking_finding_empties_consistency(self):
+        result = self.score(reconciliation={"blocking": 1, "advisory": 0, "total": 8})
+        consistency = next(c for c in result["components"] if c["key"] == "consistency")
+        self.assertEqual(consistency["points"], 0)
+        self.assertIn("blocking", consistency["detail"])
+
+    def test_confidence_below_the_policy_floor_earns_nothing(self):
+        floor = self.policy["confidence"]["critical_field_threshold"]
+        at_floor = self.score(confidence=floor)
+        below = self.score(confidence=floor - 0.2)
+        confidence_at = next(c for c in at_floor["components"] if c["key"] == "confidence")
+        confidence_below = next(c for c in below["components"] if c["key"] == "confidence")
+        self.assertEqual(confidence_at["points"], 0)
+        self.assertEqual(confidence_below["points"], 0)  # clamped, never negative
+
+    def test_a_single_source_scores_below_two_that_agree(self):
+        self.assertLess(self.score(platform=False)["score"], self.score(platform=True)["score"])
+
+    def test_short_history_reduces_coverage(self):
+        short = next(c for c in self.score(months=2)["components"] if c["key"] == "coverage")
+        full = next(c for c in self.score(months=6)["components"] if c["key"] == "coverage")
+        self.assertLess(short["points"], full["points"])
+        self.assertIn("2 of 6 months", short["detail"])
+
+    def test_bands(self):
+        self.assertEqual(band_for(100), "STRONG")
+        self.assertEqual(band_for(80), "STRONG")
+        self.assertEqual(band_for(79), "ADEQUATE")
+        self.assertEqual(band_for(40), "THIN")
+        self.assertEqual(band_for(0), "WEAK")
+
+    def test_it_is_pure(self):
+        fields, values = self.bundle()
+        args = dict(fields=fields, values=values, reconciliation={"blocking": 0, "advisory": 0, "total": 8}, policy=self.policy)
+        self.assertEqual(compute_evidence_strength(**args), compute_evidence_strength(**args))
+
+    def test_thresholds_come_from_the_policy_not_the_engine(self):
+        # Raise the confidence floor and the same evidence must score lower:
+        # nothing in this function may hold a threshold of its own.
+        strict = json.loads(json.dumps(self.policy))
+        strict["confidence"]["critical_field_threshold"] = 0.97
+        fields, values = self.bundle(confidence=0.95)
+        lenient = compute_evidence_strength(
+            fields=fields, values=values, reconciliation={"blocking": 0, "advisory": 0, "total": 8}, policy=self.policy
+        )
+        tightened = compute_evidence_strength(
+            fields=fields, values=values, reconciliation={"blocking": 0, "advisory": 0, "total": 8}, policy=strict
+        )
+        self.assertLess(tightened["score"], lenient["score"])
+
+    def test_an_empty_bundle_does_not_explode(self):
+        result = compute_evidence_strength(fields={}, values={}, reconciliation=None, policy=self.policy)
+        self.assertEqual(result["score"], 0)
+        self.assertEqual(result["band"], "WEAK")
 
 
 if __name__ == "__main__":
