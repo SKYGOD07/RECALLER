@@ -126,7 +126,7 @@ class TestRecallerAgent(unittest.IsolatedAsyncioTestCase):
                 {"content": "done"},
             ]
         )
-        run = await runAgent(
+        run = await run_agent(
             model=model,
             registry=reg,
             tool_names=["echo"],
@@ -140,7 +140,7 @@ class TestRecallerAgent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([t["name"] for t in model.calls[0]["tools"]], ["echo"])
 
         reg2 = create_registry().register(name="echo", handler=lambda *_: "ok")
-        run2 = await runAgent(
+        run2 = await run_agent(
             model=scripted([call_spec("echo", {}, "c1")]),
             registry=reg2,
             tool_names=["echo"],
@@ -325,13 +325,12 @@ class TestRecallerAgent(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(fields["invoice.on_road_price"]["value"], 124000)
 
-        bundle_res = extract_bundle(
+        bundle_res = await extract_bundle(
             documents=[invoice],
             application={},
             adapter=create_agent_extraction_adapter(model=invoice_model(0.95)),
             seed="T",
         )
-        # Note: extract_bundle is synchronous for synchronous adapters or can be called directly
         self.assertEqual(bundle_res["stats"]["adapter"], "agent")
 
     # 8. Narration Stylist
@@ -346,15 +345,12 @@ class TestRecallerAgent(unittest.IsolatedAsyncioTestCase):
             ]
         }
 
-        drifted = narrate(
+        drifted = await narrate(
             memo,
             stylist=create_narration_stylist(
                 model=scripted([{"content": "Income is roughly ₹18,500 a month."}])
             ),
         )
-        # If async narrate/stylist is called
-        if hasattr(drifted, "__await__"):
-            drifted = await drifted
         self.assertEqual(drifted["sections"][0]["body"], memo["sections"][0]["body"])
 
     # 9. Invariant: Agent package doesn't import financial engines
