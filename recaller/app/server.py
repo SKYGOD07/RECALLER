@@ -14,9 +14,24 @@ from ..core.constants import ENGINE_VERSION, WORKFLOW_VERSION
 from ..orchestrator.pipeline import STAGE_PLAN
 from .store import AppStore
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+import sys
+
+if getattr(sys, "frozen", False):
+    ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+else:
+    ROOT = Path(__file__).resolve().parent.parent.parent
+
 POLICY_PATH = ROOT / "policy" / "policy.v1.json"
+if not POLICY_PATH.exists():
+    alt_policy = Path(__file__).resolve().parent.parent.parent / "policy" / "policy.v1.json"
+    if alt_policy.exists():
+        POLICY_PATH = alt_policy
+
 APP_DIST_PATH = ROOT / "app" / "dist"
+if not APP_DIST_PATH.exists():
+    alt_dist = Path(__file__).resolve().parent.parent.parent / "app" / "dist"
+    if alt_dist.exists():
+        APP_DIST_PATH = alt_dist
 
 
 def load_policy() -> Dict[str, Any]:
