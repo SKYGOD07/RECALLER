@@ -1603,7 +1603,7 @@ body[data-mode='console'] .guides {
 .finding__note {
   margin-top: 4px;
   font-size: 11.5px;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 /* ---------- what-if ----------------------------------------------------- */

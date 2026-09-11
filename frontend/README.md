@@ -1,8 +1,10 @@
-# RECALLER — presentation site
+# RECALLER — site and loan officer console
 
-The public product-launch website for RECALLER. It is a **presentation only**: every applicant,
-document, figure and workflow run on the page is illustrative, scripted data. Nothing here
-underwrites, calculates, or talks to a backend or n8n.
+One app, two modes on one origin:
+
+- **`/`** — the landing page. Cinematic, editorial, presentation data only.
+- **`/console`** — the loan officer console. Real underwriting against the real
+  RECALLER domain packages or the RECALLER backend.
 
 ## Run
 
@@ -13,36 +15,74 @@ npm run build    # static output in dist/
 npm run lint     # oxlint
 ```
 
+## Where the numbers come from
+
+The console performs **no credit arithmetic**. It does not compute EMI, FOIR,
+LTV, eligibility or any verdict, and it evaluates no policy rule. Every figure
+on screen arrived already computed from one of two transports, both of which
+return the identical response shape:
+
+| Transport | When | What it is |
+| --- | --- | --- |
+| `engine` | default | The deterministic packages (`packages/*`) executed in the browser. Offline, installable, no server. |
+| `http` | `VITE_RECALLER_API` is set | The RECALLER FastAPI backend. |
+
+`engine` is the demo / mock mode, and it is deliberately **not** a parallel mock
+schema: it calls the same orchestrator, credit engine and `policy/policy.v1.json`
+the backend calls, so a record produced in the browser is the record the server
+would have produced — same reason codes, same hashes, same ledger.
+
+A build configured for `http` that cannot reach its backend degrades to `engine`
+and says so in the console top bar (`Runtime online · In-process engine ·
+fallback`). Set `VITE_RECALLER_STRICT=true` to make that a hard failure instead.
+See `.env.example`.
+
+Engine mode persists **intent**, not output: which files were processed and what
+the officer resolved. On reload the pipeline is re-run from that intent, which is
+safe precisely because it is deterministic — the rehydrated record is identical.
+
 ## Structure
 
 ```
 src/
-  index.css            design tokens (colour, type, spacing) + shared primitives (buttons, pills, panels)
-  App.jsx              section order
-  animations/          easing (motion.js) and hooks (useMediaQuery, useSequence)
-  components/          Nav, RevealLines/FadeIn, Counter/Scramble, ui (Button, Status, Logo, icons)
-  data/case.js         the one illustrative applicant every section draws from
-  data/site.js         download link, GitHub URL, nav links
-  sections/            one component + one stylesheet per section, in page order
+  api/                 the only place that knows where data comes from
+    config.js          transport selection from env
+    http.js            FastAPI backend (bootstrap, SSE run progress, replay, what-if)
+    engine.js          deterministic packages in-browser + localStorage rehydration
+    index.js           facade + degrade logic + amendPolicy
+  store/console.js     queue, open file, what is running (useSyncExternalStore)
+  store/toasts.js      notifications
+  hooks/console.js     useConsole / useBootedConsole / useApplicationDetail
+  lib/router.jsx       history router (/, /console, /console/application/:id/:tab)
+  lib/format.js        display formatting only — inr, pct, fingerprint, dates
+  components/
+    common/            Tag, Metric, LimitBar, Panel, states, toasts
+    layout/            ConsoleShell (top bar, workspace rail, system health)
+    applications/      the queue
+    decision/          decision hero, deterministic compute, policy ledger, memo
+    evidence/          fields by source with confidence and citations
+    reconciliation/    cross-document findings
+    whatif/            solver levers + engine-evaluated scenario sandbox
+    assist/            held fields, officer resolution, resume
+    audit/             fingerprint, policy amendment replay, execution trace
+  pages/               LandingPage, ConsolePage, ApplicationPage
+  sections/            landing sections (one component + one stylesheet each)
+  styles/console.css   console design system
+  index.css            shared tokens and landing primitives
 ```
-
-Story order: Hero → 01 Borrower → 02 Idea → 03 Agents → 04 Deterministic credit →
-05 Reconciliation → 06 Human + AI → 07 Policy → 08 Decision → 09 Audit → 10 What-if →
-11 Console → 12 Orchestration → 13 Download.
 
 ## Things to know
 
-- **Download button.** `data/site.js` points it at `/downloads/RECALLER-Setup-0.1.0-x64.exe`.
-  Put the installer in `public/downloads/` under that name (or change the path) — until then the
-  link 404s. Version / platform / package labels live in the same file.
-- **Consistent numbers.** All figures come from one case in `data/case.js` (₹1,00,000 over 36
-  months at 14% → EMI ₹3,417.76, FOIR 38.14%, LTV 80.65%; the requested 24-month version is
-  FOIR 45.66%). If you change the case, recompute and update the hard-coded copies in the
-  section files too (search for the old value).
-- **Scroll-linked opacity** must use `lerpRange` from `animations/motion.js` rather than an
-  array mapping; framer-motion otherwise hands it to a native ScrollTimeline, which mis-mapped
-  sticky-section offsets in testing.
-- **Motion** respects `prefers-reduced-motion` (MotionConfig + CSS); scripted demos jump to
-  their final state.
-- Fonts are self-hosted via Fontsource: Space Grotesk (display), Inter Tight (body),
-  JetBrains Mono (technical).
+- **Class names.** The landing and the console share one global stylesheet
+  bundle. Console-side classes that would otherwise collide with landing ones
+  (`stage`, `kv`, `slider`, `docs`, `ledger`, `console`) carry an `rc-` prefix.
+  Keep it that way when adding rules.
+- **Demo order.** `RCL-2026-0418` approves cleanly · `RCL-2026-0421` suspends at
+  the confidence gate for Assist · `RCL-2026-0433` declines on four blocking
+  reconciliation findings · `RCL-2026-0437` refers, and What-if finds the
+  ₹4,500 reduction that approves it.
+- **Aliases.** `vite.config.js` maps `@core`, `@orchestrator`, `@policy`,
+  `@synthetic` and friends straight into the monorepo, so there is exactly one
+  implementation of the credit engine in the repository.
+- **Motion** respects `prefers-reduced-motion`; landing demos jump to their
+  final state.

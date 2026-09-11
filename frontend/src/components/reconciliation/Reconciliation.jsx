@@ -27,6 +27,10 @@ const side = (s) => {
 
 function Tolerance({ finding }) {
   const t = finding.tolerance ?? {}
+  // An equality check carries neither a delta nor a tolerance — say nothing
+  // rather than printing a row of dashes.
+  const hasDelta = finding.delta_pct !== null && finding.delta_pct !== undefined
+  if (finding.similarity === undefined && !hasDelta) return null
   if (finding.similarity !== undefined) {
     return (
       <p className="finding__tol tnum">
