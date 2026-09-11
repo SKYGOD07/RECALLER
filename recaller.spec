@@ -1,12 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
+
+datas = [('D:/RECALLER-main new/policy', 'policy'), ('D:/RECALLER-main new/app/dist', 'app/dist')]
+binaries = []
+hiddenimports = []
+tmp_ret = collect_all('uvicorn')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('fastapi')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('pydantic')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('starlette')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['D:/RECALLER-main new/recaller/cli.py'],
     pathex=['D:/RECALLER-main new'],
-    binaries=[],
-    datas=[('D:/RECALLER-main new/policy', 'policy'), ('D:/RECALLER-main new/app/dist', 'app/dist')],
-    hiddenimports=[],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

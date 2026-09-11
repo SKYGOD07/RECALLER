@@ -13,7 +13,26 @@ ROOT = Path(__file__).resolve().parent.parent
 def run_tests():
     print("\nRunning RECALLER engine test suite...")
     loader = unittest.TestLoader()
-    suite = loader.discover(start_dir=str(ROOT / "tests"), pattern="test_*.py")
+    suite = None
+    try:
+        from tests import test_engine, test_pipeline, test_agent
+        suite = unittest.TestSuite()
+        suite.addTests(loader.loadTestsFromModule(test_engine))
+        suite.addTests(loader.loadTestsFromModule(test_pipeline))
+        suite.addTests(loader.loadTestsFromModule(test_agent))
+    except Exception:
+        test_dir = ROOT / "tests"
+        if not test_dir.exists():
+            test_dir = Path(__file__).resolve().parent.parent / "tests"
+        if test_dir.exists():
+            suite = loader.discover(start_dir=str(test_dir), pattern="test_*.py")
+        else:
+            print("Tests directory not found in standalone package. Running embedded health checks...")
+            from recaller.credit_engine.engine import calculate_emi
+            assert calculate_emi(10000000, 1200, 36) == 332143
+            print("Embedded calculation sanity checks passed.")
+            sys.exit(0)
+
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
     sys.exit(0 if result.wasSuccessful() else 1)
@@ -21,6 +40,7 @@ def run_tests():
 
 def serve(host: str = "127.0.0.1", port: int = 4180, no_browser: bool = False, reload: bool = False):
     import uvicorn
+    from recaller.app.server import app
 
     url = f"http://{host}:{port}/"
     print(f"\n  RECALLER Loan Officer Console")
@@ -38,7 +58,10 @@ def serve(host: str = "127.0.0.1", port: int = 4180, no_browser: bool = False, r
 
         threading.Thread(target=open_browser, daemon=True).start()
 
-    uvicorn.run("recaller.app.server:app", host=host, port=port, reload=reload)
+    if reload:
+        uvicorn.run("recaller.app.server:app", host=host, port=port, reload=True)
+    else:
+        uvicorn.run(app, host=host, port=port)
 
 
 def main():
