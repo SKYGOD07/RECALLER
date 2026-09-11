@@ -32,7 +32,7 @@ DEFAULTS: Dict[str, str] = {
     "RECALLER_PORT": "4180",
     "RECALLER_DATA_DIR": "",  # empty: ./var, or %LOCALAPPDATA%/RECALLER for the packaged build
     "RECALLER_MAX_UPLOAD_MB": "20",
-    "RECALLER_CORS_ORIGINS": "http://127.0.0.1:5180,http://localhost:5180",  # the console's dev server
+    "RECALLER_CORS_ORIGINS": "http://127.0.0.1:5180,http://localhost:5180,http://127.0.0.1:5173,http://localhost:5173",  # the console dev servers
     "RECALLER_REQUEST_LOG_SIZE": "500",
     "RECALLER_JOB_HISTORY": "50",
     "RECALLER_SSE_KEEPALIVE_SECONDS": "15",
