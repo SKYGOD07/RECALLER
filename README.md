@@ -155,32 +155,61 @@ Instructor-validated structured output.
   (`approve_*`, `compute_*`, `*_emi`, `set_policy`…), and a test asserts the agent
   package imports neither the credit engine nor the policy engine.
 
+### Configuration
+
+Nothing operational is hard-coded in the backend. Every tunable (host, port,
+CORS origins, upload cap, stage pacing, application id format, pattern-extractor
+confidence, agent limits, model, host, timeouts) is listed once in `DEFAULTS` in
+`recaller/config.py` and overridden from the environment or a git-ignored `.env`
+at the repository root. `.env.example` documents every key.
+`GET /api/diagnostics/config` and the System screen show each effective value
+and whether it was set or defaulted. Keys are never reported back.
+
+Data is not configuration. The synthetic book (`recaller/synthetic`) and the
+credit policy (`policy/policy.v1.json`) load exactly as they are.
+
 ### Configuring a model
 
-Two providers, one interface. Put settings in a git-ignored `.env` (see
-`.env.example`); without either, RECALLER runs fully deterministic and the agent
-endpoints answer `503 LLM_NOT_CONFIGURED`.
+Two providers, one interface. Without either, RECALLER runs fully deterministic
+and the agent endpoints answer `503 LLM_NOT_CONFIGURED`.
 
-**Claude** — set `ANTHROPIC_API_KEY`, or `RECALLER_LLM_PROVIDER=anthropic` with an
-`ant auth login` profile. `RECALLER_LLM_MODEL` defaults to `claude-opus-5`.
-
-**Ollama** — local models, or Ollama Cloud:
+**Ollama Cloud: NVIDIA Nemotron 3 Ultra.** Create a key at
+https://ollama.com/settings/keys, then put this in `.env`:
 
 ```bash
-ollama serve                      # then, in another shell
-ollama pull llama3.1              # any tool-capable model
-
 RECALLER_LLM_PROVIDER=ollama
-RECALLER_LLM_MODEL=llama3.1
-OLLAMA_HOST=http://127.0.0.1:11434   # https://ollama.com for Cloud
-OLLAMA_API_KEY=                      # Cloud only; a local server needs none
+RECALLER_LLM_MODEL=nemotron-3-ultra
+OLLAMA_HOST=https://ollama.com
+OLLAMA_API_KEY=<your key>
+```
+
+Cloud's API names models without the `:cloud` suffix the local daemon uses.
+`nemotron-3-ultra:cloud` is accepted and renamed, and `/api/health` says so.
+With a key and no `OLLAMA_HOST`, the host defaults to Ollama Cloud.
+
+**Ollama, local.** `ollama serve`, `ollama pull <model>`, then
+`RECALLER_LLM_PROVIDER=ollama` and `RECALLER_LLM_MODEL=<model>`. No key is needed.
+
+**Claude.** Set `ANTHROPIC_API_KEY`, or `RECALLER_LLM_PROVIDER=anthropic` with an
+`ant auth login` profile. The model defaults to `claude-opus-5`.
+
+**Check it is live** before trusting the agents with a file:
+
+```powershell
+.venv\Scripts\python -m recaller.cli check-llm      # prints the config (no key) and the model's own reply
+curl -s -X POST localhost:4180/api/diagnostics/llm  # the same over HTTP; "Send test prompt" on the System screen
 ```
 
 Ollama runs through `/api/chat` with the same tool loop, and uses Ollama's
 JSON-schema `format` for structured output, so extraction stays validated.
 Temperature defaults to `0` — reading a field off a document should give the
-same answer twice. Pick a model that supports tools; `RECALLER_OLLAMA_NUM_CTX`
-raises the context window for long statements.
+same answer twice. Reasoning models' thinking is kept out of the answer, and
+`RECALLER_OLLAMA_THINK` turns it on, off or sets a level.
+`RECALLER_OLLAMA_NUM_CTX` raises the context window for long statements.
+
+An explanation reports `"source": "model"` when the model's own text was used,
+and `"deterministic"` (with `rejected_reason`) when it cited a figure or reason
+code that is not in the record and was replaced.
 
 On `RECALLER_LLM_PROVIDER=auto` (the default) Claude wins if its key is present,
 then Ollama if `OLLAMA_HOST` or `OLLAMA_API_KEY` is set, else no model at all.
