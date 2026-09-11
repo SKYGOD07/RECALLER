@@ -113,6 +113,35 @@ async def run_file(client: httpx.AsyncClient, app: Dict[str, Any]) -> Dict[str, 
     return out
 
 
+async def collect_file(client: httpx.AsyncClient, app: Dict[str, Any]) -> Dict[str, Any]:
+    """The latest review / explain / ask already on the server for a file, waiting for any still running."""
+    app_id = app["id"]
+    rec = await record_of(client, app_id)
+    decision = rec.get("decision") or {}
+    out: Dict[str, Any] = {
+        "id": app_id,
+        "borrower": app["borrower_name"],
+        "segment": app["segment"],
+        "status": rec.get("status"),
+        "decision": decision.get("decision"),
+        "reason_codes": [c.get("code") for c in decision.get("reason_codes", [])],
+        "headline": rec.get("headline"),
+    }
+    started = time.perf_counter()
+    while True:
+        runs = (await client.get(f"/api/applications/{app_id}/agent-runs")).json()
+        latest = {k: next((r for r in runs if r["kind"] == k), None) for k in ("review", "explain", "ask")}
+        running = [k for k, r in latest.items() if r and r["status"] == "RUNNING"]
+        if not running or time.perf_counter() - started > PER_FILE_LIMIT_S:
+            break
+        log(f"{app_id} waiting for {', '.join(running)}")
+        await asyncio.sleep(30)
+    for kind, run in latest.items():
+        if run:
+            out[kind] = run
+    return out
+
+
 def _tokens(*runs: Any) -> int:
     total = 0
     for run in runs:
@@ -206,6 +235,7 @@ async def main() -> None:
     ap.add_argument("--base", default="http://127.0.0.1:4180")
     ap.add_argument("--only", nargs="*", help="application ids (default: every seeded file)")
     ap.add_argument("--parallel", type=int, default=2)
+    ap.add_argument("--collect", action="store_true", help="rebuild the report from runs already on the server; start nothing")
     args = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -217,6 +247,15 @@ async def main() -> None:
         apps = [a for a in (await client.get("/api/applications")).json() if not a.get("custom")]
         if args.only:
             apps = [a for a in apps if a["id"] in args.only]
+
+        if args.collect:
+            log(f"collecting {len(apps)} file(s) from the server")
+            collected = await asyncio.gather(*(collect_file(client, a) for a in apps))
+            (OUT / "results.json").write_text(json.dumps({"llm": llm, "files": collected}, indent=2, default=str), encoding="utf-8")
+            (OUT / "report.md").write_text(report(list(collected), llm), encoding="utf-8")
+            log(f"done → {OUT / 'report.md'}")
+            return
+
         log(f"{len(apps)} file(s), {args.parallel} at a time")
 
         results: Dict[str, Dict[str, Any]] = {}
