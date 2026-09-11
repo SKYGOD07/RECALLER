@@ -89,6 +89,11 @@ class UnderwritingService:
             self.db.set_meta("app_sequence", str(self.settings.app_sequence_start))
             self.db.set_meta("seeded", "1")
 
+    def recover_interrupted(self) -> int:
+        """Agent runs execute in this process, so any still RUNNING at startup died with the last one.
+        Left as they were, they would also block new runs of the same kind (409 AGENT_RUNNING)."""
+        return self.db.interrupt_running_agent_runs("Interrupted: the server stopped before this run finished.")
+
     @staticmethod
     def _synthetic_row(app_id: str, doc: Dict[str, Any], doc_id: Optional[str] = None) -> Dict[str, Any]:
         return {

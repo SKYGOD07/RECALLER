@@ -53,6 +53,7 @@ def create_app(settings: Optional[Settings] = None, provider: Any = _UNSET) -> F
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         service.ensure_seeded()
+        service.recover_interrupted()
         yield
         await jobs.cancel_all()
         db.close()

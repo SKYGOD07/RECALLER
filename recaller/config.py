@@ -63,6 +63,8 @@ DEFAULTS: Dict[str, str] = {
     "RECALLER_OLLAMA_CLOUD_HOST": "https://ollama.com",  # used when OLLAMA_API_KEY is set without OLLAMA_HOST
     "RECALLER_LLM_TIMEOUT": "300",
     "RECALLER_LLM_MAX_TOKENS": "16000",
+    "RECALLER_LLM_RETRIES": "4",  # Ollama: retries on rate limits (429), 5xx and connection errors, with backoff
+    "RECALLER_LLM_CONCURRENCY": "2",  # Ollama: model calls in flight at once; the rest queue
     "RECALLER_LLM_TEMPERATURE": "0",
     "RECALLER_LLM_EFFORT": "",
     "RECALLER_OLLAMA_THINK": "",

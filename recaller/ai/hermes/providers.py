@@ -43,6 +43,7 @@ decide or compute a credit outcome.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from dataclasses import dataclass, field
@@ -61,6 +62,9 @@ DEFAULT_OLLAMA_HOST = DEFAULTS["OLLAMA_HOST"]
 OLLAMA_CLOUD_HOST = DEFAULTS["RECALLER_OLLAMA_CLOUD_HOST"]
 DEFAULT_TIMEOUT = float(DEFAULTS["RECALLER_LLM_TIMEOUT"])
 DEFAULT_MAX_TOKENS = int(DEFAULTS["RECALLER_LLM_MAX_TOKENS"])
+DEFAULT_RETRIES = int(DEFAULTS["RECALLER_LLM_RETRIES"])
+DEFAULT_CONCURRENCY = int(DEFAULTS["RECALLER_LLM_CONCURRENCY"])
+MAX_BACKOFF_S = 30.0
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _THINK_BLOCK = re.compile(r"<think>[\s\S]*?</think>", re.I)
 _THINK_LEVELS = ("low", "medium", "high")
@@ -82,10 +86,13 @@ class ModelReply:
 class ProviderError(RuntimeError):
     """A model call failed. ``status`` mirrors the upstream HTTP status where there was one."""
 
-    def __init__(self, message: str, *, status: Optional[int] = None, retryable: bool = False) -> None:
+    def __init__(
+        self, message: str, *, status: Optional[int] = None, retryable: bool = False, retry_after: Optional[float] = None
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.retryable = retryable
+        self.retry_after = retry_after
 
 
 class AnthropicProvider:
@@ -236,6 +243,8 @@ class OllamaProvider:
         keep_alive: Optional[str] = None,
         think: Union[bool, str, None] = None,
         timeout: float = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_RETRIES,
+        concurrency: int = DEFAULT_CONCURRENCY,
     ) -> None:
         self.model = model
         self.host = str(host).rstrip("/")
@@ -245,6 +254,10 @@ class OllamaProvider:
         self.keep_alive = keep_alive
         self.think = think
         self.timeout = timeout
+        self.max_retries = max(0, max_retries)
+        # A review fans out to several reviewers at once; hosted models rate-limit
+        # per key, so calls beyond this many wait their turn instead of failing.
+        self._gate = asyncio.Semaphore(max(1, concurrency))
 
     # -- translation --------------------------------------------------------------
 
@@ -318,6 +331,22 @@ class OllamaProvider:
         return headers
 
     async def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """One call, queued behind the concurrency gate, retried with backoff when the failure is transient."""
+        attempt = 0
+        while True:
+            try:
+                async with self._gate:
+                    return await self._post_once(path, body)
+            except ProviderError as exc:
+                if not exc.retryable or attempt >= self.max_retries:
+                    if attempt:
+                        raise ProviderError(f"{exc} (gave up after {attempt} retries)", status=exc.status) from exc
+                    raise
+                delay = exc.retry_after if exc.retry_after is not None else min(MAX_BACKOFF_S, 2.0 * 2**attempt)
+                attempt += 1
+                await asyncio.sleep(delay)
+
+    async def _post_once(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
         import httpx
 
         try:
@@ -329,12 +358,22 @@ class OllamaProvider:
                 retryable=True,
             ) from exc
         except httpx.TimeoutException as exc:
-            raise ProviderError(f"Ollama timed out after {self.timeout:.0f}s.", retryable=True) from exc
+            # Not retried: a call that already used the whole timeout would only use it again.
+            raise ProviderError(f"Ollama timed out after {self.timeout:.0f}s (RECALLER_LLM_TIMEOUT).") from exc
         except httpx.HTTPError as exc:
             raise ProviderError(f"Could not reach Ollama: {exc}", retryable=True) from exc
 
         if resp.status_code >= 400:
-            raise ProviderError(_ollama_error(resp, self.model, self.host), status=resp.status_code, retryable=resp.status_code >= 500)
+            try:
+                retry_after = min(MAX_BACKOFF_S, float(resp.headers.get("retry-after", "")))
+            except ValueError:
+                retry_after = None
+            raise ProviderError(
+                _ollama_error(resp, self.model, self.host),
+                status=resp.status_code,
+                retryable=resp.status_code == 429 or resp.status_code >= 500,
+                retry_after=retry_after,
+            )
 
         try:
             payload = resp.json()
@@ -605,6 +644,8 @@ def provider_from_env(env: Optional[Mapping[str, str]] = None) -> Optional[Union
             keep_alive=raw("OLLAMA_KEEP_ALIVE", env) or None,
             think=parse_think(raw("RECALLER_OLLAMA_THINK", env)),
             timeout=get_float("RECALLER_LLM_TIMEOUT", env, minimum=1.0),
+            max_retries=get_int("RECALLER_LLM_RETRIES", env, minimum=0),
+            concurrency=get_int("RECALLER_LLM_CONCURRENCY", env, minimum=1),
         )
 
     return None
