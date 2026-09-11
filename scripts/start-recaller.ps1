@@ -1,7 +1,8 @@
 <#
   RECALLER - Windows launcher.
 
-  Builds the loan officer console if needed, serves it on a local port, and
+  Checks Python 3.10+, dependencies, verifies the deterministic credit engine,
+  builds the loan officer console if needed, serves it on a local port, and
   opens a browser. Everything is resolved relative to this script, so the
   repository can live anywhere on the machine - there are no absolute paths and
   no developer-specific configuration.
@@ -19,6 +20,7 @@
 [CmdletBinding()]
 param(
   [int]$Port = 4180,
+  [string]$HostAddress = "127.0.0.1",
   [switch]$Dev,
   [switch]$NoBrowser,
   [switch]$Rebuild
@@ -27,6 +29,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $App = Join-Path $Root 'app'
+$Dist = Join-Path $App 'dist'
 
 function Write-Step($text) { Write-Host "  $text" -ForegroundColor Gray }
 function Write-Good($text) { Write-Host "  [ok] $text" -ForegroundColor Green }
@@ -38,123 +41,124 @@ Write-Host '  Loan Officer Console' -ForegroundColor White
 Write-Host '  AI agentic credit underwriter for thin-file green borrowers' -ForegroundColor DarkGray
 Write-Host ''
 
-# ---- dependency checks -------------------------------------------------
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Write-Bad 'Node.js was not found on this machine.'
+# ---- Python dependency checks -------------------------------------------
+$PythonCmd = $null
+if (Get-Command python -ErrorAction SilentlyContinue) {
+  $PythonCmd = "python"
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+  $PythonCmd = "py"
+}
+
+if (-not $PythonCmd) {
+  Write-Bad 'Python was not found on this machine.'
   Write-Host ''
-  Write-Host '  RECALLER needs Node.js 20 or newer. Install it from:' -ForegroundColor White
-  Write-Host '    https://nodejs.org/en/download' -ForegroundColor Cyan
+  Write-Host '  RECALLER needs Python 3.10 or newer. Install it from:' -ForegroundColor White
+  Write-Host '    https://www.python.org/downloads/' -ForegroundColor Cyan
+  Write-Host '  (Make sure to check "Add Python to PATH" during installation)' -ForegroundColor DarkGray
   Write-Host ''
   Write-Host '  Then close this window, open a new one, and run this again.' -ForegroundColor White
-  Write-Host '  (A new window is needed so Windows picks up the updated PATH.)' -ForegroundColor DarkGray
   Write-Host ''
   exit 1
 }
 
-$nodeVersion = (& node --version).TrimStart('v')
-$nodeMajor = [int]($nodeVersion -split '\.')[0]
-if ($nodeMajor -lt 20) {
-  Write-Bad "Node.js $nodeVersion is too old. RECALLER needs 20 or newer."
-  Write-Host '  Update from https://nodejs.org/en/download and run this again.' -ForegroundColor White
+$pyVerOutput = & $PythonCmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>&1
+$pyMajor = [int]($pyVerOutput -split '\.')[0]
+$pyMinor = [int]($pyVerOutput -split '\.')[1]
+
+if ($pyMajor -lt 3 -or ($pyMajor -eq 3 -and $pyMinor -lt 10)) {
+  Write-Bad "Python $pyVerOutput is too old. RECALLER needs Python 3.10 or newer."
+  Write-Host '  Update from https://www.python.org/downloads/ and run this again.' -ForegroundColor White
   Write-Host ''
   exit 1
 }
-Write-Good "Node.js $nodeVersion"
+Write-Good "Python $pyVerOutput ($PythonCmd)"
 
-if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  Write-Bad 'npm was not found, although Node.js is installed.'
-  Write-Host '  Reinstall Node.js from https://nodejs.org/en/download - npm ships with it.' -ForegroundColor White
+# ---- Python packages check ----------------------------------------------
+$reqCheck = & $PythonCmd -c "import fastapi, uvicorn, pydantic; print('OK')" 2>&1
+if ($reqCheck -ne 'OK') {
+  Write-Step 'Installing Python dependencies (fastapi, uvicorn, pydantic)...'
+  & $PythonCmd -m pip install fastapi uvicorn pydantic | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Bad 'Failed to install Python dependencies via pip.'
+    Write-Host '  Run: pip install fastapi uvicorn pydantic' -ForegroundColor Cyan
+    Write-Host ''
+    exit 1
+  }
+  Write-Good 'Python dependencies installed'
+} else {
+  Write-Good 'Python dependencies present (FastAPI, Uvicorn, Pydantic)'
+}
+
+# ---- Self-check / Test suite --------------------------------------------
+# An unverified credit engine must never reach a loan officer, so a failing
+# self-check stops the launch rather than warning and continuing.
+Write-Step 'Verifying the deterministic credit engine...'
+$env:PYTHONPATH = $Root
+& $PythonCmd -m unittest discover -s (Join-Path $Root 'tests') -p "test_*.py" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Bad 'The credit engine self-check failed. RECALLER will not start.'
+  Write-Host '  Run this to inspect the failure:' -ForegroundColor White
+  Write-Host '    python -m unittest discover -s tests -p "test_*.py"' -ForegroundColor Cyan
   Write-Host ''
   exit 1
 }
+Write-Good 'Credit engine verified (100% assertions & audit chain pass)'
 
-if (-not (Test-Path $App)) {
-  Write-Bad "The app folder is missing (expected at $App)."
-  Write-Host '  This copy of RECALLER looks incomplete. Re-extract the download and try again.' -ForegroundColor White
-  Write-Host ''
-  exit 1
-}
-
-# ---- port availability -------------------------------------------------
+# ---- Port availability --------------------------------------------------
 $inUse = $null
 try { $inUse = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop } catch { $inUse = $null }
 if ($inUse) {
   Write-Bad "Port $Port is already in use."
   Write-Host '  Something else is listening there, possibly RECALLER already running.' -ForegroundColor White
-  Write-Host "  Open http://127.0.0.1:$Port/ to check, or start on another port:" -ForegroundColor White
-  Write-Host '    powershell -ExecutionPolicy Bypass -File scripts\start-recaller.ps1 -Port 4200' -ForegroundColor Cyan
+  Write-Host "  Open http://$HostAddress`:$Port/ to check, or start on another port:" -ForegroundColor White
+  Write-Host "    powershell -ExecutionPolicy Bypass -File scripts\start-recaller.ps1 -Port 4200" -ForegroundColor Cyan
   Write-Host ''
   exit 1
 }
 
-# ---- dependencies ------------------------------------------------------
-if (-not (Test-Path (Join-Path $App 'node_modules'))) {
-  Write-Step 'Installing dependencies (first run only, this takes a minute)...'
-  Push-Location $App
-  try {
-    & npm install --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
-  } finally { Pop-Location }
-  Write-Good 'Dependencies installed'
-} else {
-  Write-Good 'Dependencies present'
-}
-
-# ---- self-check --------------------------------------------------------
-# An unverified credit engine must never reach a loan officer, so a failing
-# self-check stops the launch rather than warning and continuing.
-Write-Step 'Verifying the credit engine...'
-& node (Join-Path $Root 'scripts\test-engine.mjs') | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  Write-Bad 'The credit engine self-check failed. RECALLER will not start.'
-  Write-Host '  Run this to see what failed:' -ForegroundColor White
-  Write-Host '    node scripts\test-engine.mjs' -ForegroundColor Cyan
-  Write-Host ''
-  exit 1
-}
-Write-Good 'Credit engine verified (91 checks)'
-
-# ---- build -------------------------------------------------------------
-Push-Location $App
-try {
-  if (-not $Dev) {
-    $dist = Join-Path $App 'dist'
-    if ($Rebuild -or -not (Test-Path (Join-Path $dist 'index.html'))) {
-      Write-Step 'Building the console...'
+# ---- Console build check ------------------------------------------------
+if (-not (Test-Path (Join-Path $Dist 'index.html')) -or $Rebuild) {
+  if (Get-Command npm -ErrorAction SilentlyContinue) {
+    Write-Step 'Building the loan officer frontend console...'
+    Push-Location $App
+    try {
+      if (-not (Test-Path (Join-Path $App 'node_modules'))) {
+        Write-Step 'Installing npm dependencies...'
+        & npm install --no-audit --no-fund | Out-Null
+      }
       & npm run build | Out-Null
       if ($LASTEXITCODE -ne 0) {
         Write-Bad "Build failed with exit code $LASTEXITCODE."
-        Write-Host '  Run this to see what failed:' -ForegroundColor White
-        Write-Host '    npm --prefix app run build' -ForegroundColor Cyan
-        Write-Host ''
         exit 1
       }
       Write-Good 'Console built'
-    } else {
-      Write-Good 'Console build present (pass -Rebuild to force a fresh build)'
+    } finally {
+      Pop-Location
+    }
+  } else {
+    if (-not (Test-Path (Join-Path $Dist 'index.html'))) {
+      Write-Bad 'Frontend console build missing and npm is not installed to compile it.'
+      Write-Host '  Please ensure app/dist is present or install Node.js.' -ForegroundColor White
+      exit 1
     }
   }
-
-  # ---- launch ----------------------------------------------------------
-  $url = "http://127.0.0.1:$Port/"
-  if (-not $NoBrowser) {
-    Start-Job -ScriptBlock {
-      param($u)
-      Start-Sleep -Seconds 3
-      Start-Process $u
-    } -ArgumentList $url | Out-Null
-  }
-
-  Write-Host ''
-  Write-Host "  Console  $url" -ForegroundColor Green
-  Write-Host '  Press Ctrl+C to stop.' -ForegroundColor DarkGray
-  Write-Host ''
-
-  if ($Dev) {
-    & npm run dev -- --port $Port
-  } else {
-    & npm run preview -- --port $Port --host 127.0.0.1
-  }
-} finally {
-  Pop-Location
+} else {
+  Write-Good 'Console build present'
 }
+
+# ---- Launch server ------------------------------------------------------
+$url = "http://$HostAddress`:$Port/"
+Write-Host ''
+Write-Host "  Console  $url" -ForegroundColor Green
+Write-Host '  Press Ctrl+C to stop.' -ForegroundColor DarkGray
+Write-Host ''
+
+$cliArgs = @("-m", "recaller.cli", "serve", "--host", $HostAddress, "--port", "$Port")
+if ($NoBrowser) {
+  $cliArgs += "--no-browser"
+}
+if ($Dev) {
+  $cliArgs += "--reload"
+}
+
+& $PythonCmd $cliArgs
