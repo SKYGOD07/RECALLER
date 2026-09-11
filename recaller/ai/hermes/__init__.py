@@ -10,8 +10,11 @@ from .delegation import DELEGATE_BLOCKED_TOOLS, delegate_task, register_delegate
 from .loop import DEFAULT_MAX_ITERATIONS, AgentRun, run_agent
 from .providers import (
     DEFAULT_ANTHROPIC_MODEL,
+    DEFAULT_OLLAMA_HOST,
+    DEFAULT_OLLAMA_MODEL,
     AnthropicProvider,
     ModelReply,
+    OllamaProvider,
     ProviderError,
     ScriptedProvider,
     provider_from_env,
@@ -29,8 +32,11 @@ __all__ = [
     "AnthropicProvider",
     "DEFAULT_ANTHROPIC_MODEL",
     "DEFAULT_MAX_ITERATIONS",
+    "DEFAULT_OLLAMA_HOST",
+    "DEFAULT_OLLAMA_MODEL",
     "DELEGATE_BLOCKED_TOOLS",
     "ModelReply",
+    "OllamaProvider",
     "ProviderError",
     "ScriptedProvider",
     "TOOLSETS",

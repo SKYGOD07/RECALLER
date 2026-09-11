@@ -13,8 +13,11 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from recaller.ai.hermes import (
+    DEFAULT_OLLAMA_HOST,
+    DEFAULT_OLLAMA_MODEL,
     AgentExtractionAdapter,
     AnthropicProvider,
+    OllamaProvider,
     ScriptedProvider,
     ToolRegistry,
     delegate_task,
@@ -22,6 +25,8 @@ from recaller.ai.hermes import (
     is_forbidden_tool_name,
     list_skills,
     load_skill,
+    provider_from_env,
+    provider_status,
     resolve_toolset,
     run_agent,
     skill_prompt,
@@ -232,6 +237,86 @@ class TestGuardsAndProvider(unittest.TestCase):
             if re.search(r"credit_engine|policy_engine|whatif", imports):
                 offenders.append(str(f))
         self.assertEqual(offenders, [])
+
+
+class TestOllamaProvider(unittest.TestCase):
+    """Ollama speaks a different wire format; these pin the three translations."""
+
+    def test_message_conversion(self):
+        msgs = [
+            {"role": "user", "content": "go"},
+            {"role": "assistant", "content": "looking", "tool_calls": [{"id": "t1", "name": "read_document", "arguments": {"doc_id": "D1"}}]},
+            {"role": "tool", "tool_call_id": "t1", "name": "read_document", "content": "{}"},
+        ]
+        api = OllamaProvider.to_api_messages("SYS", msgs)
+        self.assertEqual([m["role"] for m in api], ["system", "user", "assistant", "tool"])
+        self.assertEqual(api[2]["tool_calls"][0]["function"]["name"], "read_document")
+        self.assertEqual(api[2]["tool_calls"][0]["function"]["arguments"], {"doc_id": "D1"})
+        # each tool result is its own message, named so the model can line it up
+        self.assertEqual(api[3]["tool_name"], "read_document")
+        self.assertEqual(OllamaProvider.to_api_messages("", [])[0:1], [])
+
+    def test_tool_schema_conversion(self):
+        schema = {"type": "object", "properties": {"doc_id": {"type": "string"}}, "required": ["doc_id"]}
+        api = OllamaProvider.to_api_tools([{"name": "read_document", "description": "Read it", "input_schema": schema}])
+        self.assertEqual(api[0]["type"], "function")
+        self.assertEqual(api[0]["function"]["name"], "read_document")
+        self.assertEqual(api[0]["function"]["parameters"], schema)
+        # a tool that declares no parameters still gets a valid object schema
+        bare = OllamaProvider.to_api_tools([{"name": "ping"}])
+        self.assertEqual(bare[0]["function"]["parameters"], {"type": "object", "properties": {}})
+
+    def test_reply_conversion(self):
+        reply = OllamaProvider._to_reply(
+            {
+                "message": {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "read_document", "arguments": {"doc_id": "D1"}}}]},
+                "done_reason": "stop",
+                "prompt_eval_count": 11,
+                "eval_count": 7,
+            }
+        )
+        self.assertEqual(reply.stop_reason, "tool_use")  # Ollama says "stop" even when it called a tool
+        self.assertEqual(reply.tool_calls[0]["name"], "read_document")
+        self.assertTrue(reply.tool_calls[0]["id"])  # Ollama omits ids; the loop needs one
+        self.assertEqual(reply.usage, {"input_tokens": 11, "output_tokens": 7})
+        plain = OllamaProvider._to_reply({"message": {"content": "done"}, "done_reason": "stop"})
+        self.assertEqual((plain.content, plain.stop_reason, plain.tool_calls), ("done", "stop", []))
+
+    def test_cloud_key_is_sent_and_local_needs_none(self):
+        self.assertNotIn("Authorization", OllamaProvider(host="http://127.0.0.1:11434")._headers())
+        self.assertEqual(OllamaProvider(api_key="k")._headers()["Authorization"], "Bearer k")
+
+    def test_reads_are_repeatable_by_default(self):
+        self.assertEqual(OllamaProvider()._options()["temperature"], 0.0)
+
+
+class TestProviderSelection(unittest.TestCase):
+    def test_auto_prefers_anthropic_then_ollama_then_nothing(self):
+        self.assertIsNone(provider_status({})["provider"])
+        self.assertEqual(provider_status({"ANTHROPIC_API_KEY": "sk"})["provider"], "anthropic")
+        self.assertEqual(provider_status({"OLLAMA_HOST": "http://h:11434"})["provider"], "ollama")
+        self.assertEqual(provider_status({"OLLAMA_API_KEY": "k"})["provider"], "ollama")
+        self.assertEqual(provider_status({"ANTHROPIC_API_KEY": "sk", "OLLAMA_API_KEY": "k"})["provider"], "anthropic")
+
+    def test_explicit_choice_wins(self):
+        forced = provider_status({"RECALLER_LLM_PROVIDER": "ollama"})
+        self.assertEqual((forced["provider"], forced["model"]), ("ollama", DEFAULT_OLLAMA_MODEL))
+        self.assertEqual(forced["host"], DEFAULT_OLLAMA_HOST)
+        self.assertIsNone(provider_status({"RECALLER_LLM_PROVIDER": "none", "OLLAMA_API_KEY": "k"})["provider"])
+
+    def test_built_provider_carries_its_configuration(self):
+        provider = provider_from_env(
+            {
+                "RECALLER_LLM_PROVIDER": "ollama",
+                "RECALLER_LLM_MODEL": "qwen3:8b",
+                "OLLAMA_HOST": "https://ollama.com/",
+                "OLLAMA_API_KEY": "k",
+                "RECALLER_OLLAMA_NUM_CTX": "8192",
+            }
+        )
+        self.assertIsInstance(provider, OllamaProvider)
+        self.assertEqual((provider.model, provider.host, provider.num_ctx), ("qwen3:8b", "https://ollama.com", 8192))
+        self.assertIsNone(provider_from_env({}))
 
 
 if __name__ == "__main__":

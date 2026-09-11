@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, List, Mapping, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel
 
@@ -458,22 +458,68 @@ async def structured(provider: Any, *, response_model: Type[M], system: str, pro
     return value
 
 
+def _clean(env: Mapping[str, str], key: str) -> str:
+    return (env.get(key) or "").strip()
+
+
+def _number(env: Mapping[str, str], key: str, default: Optional[float] = None) -> Optional[float]:
+    raw = _clean(env, key)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 def provider_status(env: Mapping[str, str] = os.environ) -> Dict[str, Any]:
-    mode = (env.get("RECALLER_LLM_PROVIDER") or "auto").strip().lower()
-    has_creds = bool(env.get("ANTHROPIC_API_KEY") or env.get("ANTHROPIC_AUTH_TOKEN"))
-    enabled = mode == "anthropic" or (mode == "auto" and has_creds)
-    return {
+    """What the runtime would use, and why — surfaced by /api/health and the console."""
+    mode = (_clean(env, "RECALLER_LLM_PROVIDER") or "auto").lower()
+    anthropic_creds = bool(_clean(env, "ANTHROPIC_API_KEY") or _clean(env, "ANTHROPIC_AUTH_TOKEN"))
+    # A default host is not evidence of a server, so auto-selection needs someone
+    # to have actually named one. RECALLER_LLM_PROVIDER=ollama skips that test.
+    ollama_configured = bool(_clean(env, "OLLAMA_HOST") or _clean(env, "OLLAMA_API_KEY"))
+
+    if mode == "auto":
+        provider = "anthropic" if anthropic_creds else ("ollama" if ollama_configured else None)
+    elif mode in ("anthropic", "ollama"):
+        provider = mode
+    else:
+        provider = None
+
+    default_model = {"anthropic": DEFAULT_ANTHROPIC_MODEL, "ollama": DEFAULT_OLLAMA_MODEL}.get(provider or "")
+    status: Dict[str, Any] = {
         "mode": mode,
-        "provider": "anthropic" if enabled else None,
-        "model": (env.get("RECALLER_LLM_MODEL") or DEFAULT_ANTHROPIC_MODEL) if enabled else None,
-        "effort": env.get("RECALLER_LLM_EFFORT") or None,
-        "credentials_detected": has_creds,
-        "enabled": enabled,
+        "provider": provider,
+        "model": (_clean(env, "RECALLER_LLM_MODEL") or default_model) if provider else None,
+        "effort": _clean(env, "RECALLER_LLM_EFFORT") or None,
+        # "has what it needs to authenticate" — a local Ollama needs nothing.
+        "credentials_detected": anthropic_creds if provider == "anthropic" else (provider == "ollama"),
+        "enabled": provider is not None,
     }
+    if provider == "ollama":
+        status["host"] = _clean(env, "OLLAMA_HOST") or DEFAULT_OLLAMA_HOST
+        status["api_key_detected"] = bool(_clean(env, "OLLAMA_API_KEY"))
+        status["effort"] = None
+    return status
 
 
-def provider_from_env(env: Mapping[str, str] = os.environ) -> Optional[AnthropicProvider]:
+def provider_from_env(env: Mapping[str, str] = os.environ) -> Optional[Union[AnthropicProvider, OllamaProvider]]:
     status = provider_status(env)
-    if not status["enabled"]:
-        return None
-    return AnthropicProvider(model=status["model"], effort=status["effort"])
+    provider = status["provider"]
+
+    if provider == "anthropic":
+        return AnthropicProvider(model=status["model"], effort=status["effort"])
+
+    if provider == "ollama":
+        num_ctx = _number(env, "RECALLER_OLLAMA_NUM_CTX")
+        return OllamaProvider(
+            model=status["model"],
+            host=status["host"],
+            api_key=_clean(env, "OLLAMA_API_KEY") or None,
+            temperature=_number(env, "RECALLER_LLM_TEMPERATURE", 0.0) or 0.0,
+            num_ctx=int(num_ctx) if num_ctx else None,
+            keep_alive=_clean(env, "OLLAMA_KEEP_ALIVE") or None,
+        )
+
+    return None

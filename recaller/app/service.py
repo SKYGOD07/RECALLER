@@ -215,7 +215,9 @@ class UnderwritingService:
     def status(self) -> Dict[str, Any]:
         return {
             "db": {"ok": True, "path": str(self.db.path), "counts": self.db.counts()},
-            "llm": provider_status() if self.provider is None or getattr(self.provider, "name", "") == "anthropic"
+            # A provider built from the environment reports through provider_status,
+            # which knows why it was chosen; one injected by a test reports itself.
+            "llm": provider_status() if self.provider is None or getattr(self.provider, "name", "") in ("anthropic", "ollama")
             else {"enabled": True, "provider": getattr(self.provider, "name", "custom"), "model": getattr(self.provider, "model", None)},
             "documents": {"engine": "PyMuPDF", "version": pymupdf.VersionBind, "ocr": ocr_available()},
             "jobs": {"running": sum(1 for j in self.jobs.list() if j["status"] == "RUNNING"), "subscribers": self.jobs.subscriber_count()},
@@ -495,7 +497,8 @@ class UnderwritingService:
         if self.provider is None:
             raise ServiceError(
                 503, "LLM_NOT_CONFIGURED",
-                "No model is configured. Set ANTHROPIC_API_KEY (or RECALLER_LLM_PROVIDER=anthropic) and restart. "
+                "No model is configured. Set ANTHROPIC_API_KEY, or run a local model with "
+                "RECALLER_LLM_PROVIDER=ollama (OLLAMA_HOST, and OLLAMA_API_KEY for Ollama Cloud), and restart. "
                 "Underwriting itself is fully deterministic and does not need one.",
             )
         record = self.require_record(app_id, decided=True)

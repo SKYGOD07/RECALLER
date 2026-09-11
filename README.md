@@ -155,10 +155,39 @@ Instructor-validated structured output.
   (`approve_*`, `compute_*`, `*_emi`, `set_policy`…), and a test asserts the agent
   package imports neither the credit engine nor the policy engine.
 
-Configure a model with `ANTHROPIC_API_KEY` (or `RECALLER_LLM_PROVIDER=anthropic`
-with an `ant auth login` profile); `RECALLER_LLM_MODEL` defaults to
-`claude-opus-5`. Without one, RECALLER runs fully deterministic and the agent
-endpoints answer `503 LLM_NOT_CONFIGURED`. Put settings in a git-ignored `.env`.
+### Configuring a model
+
+Two providers, one interface. Put settings in a git-ignored `.env` (see
+`.env.example`); without either, RECALLER runs fully deterministic and the agent
+endpoints answer `503 LLM_NOT_CONFIGURED`.
+
+**Claude** — set `ANTHROPIC_API_KEY`, or `RECALLER_LLM_PROVIDER=anthropic` with an
+`ant auth login` profile. `RECALLER_LLM_MODEL` defaults to `claude-opus-5`.
+
+**Ollama** — local models, or Ollama Cloud:
+
+```bash
+ollama serve                      # then, in another shell
+ollama pull llama3.1              # any tool-capable model
+
+RECALLER_LLM_PROVIDER=ollama
+RECALLER_LLM_MODEL=llama3.1
+OLLAMA_HOST=http://127.0.0.1:11434   # https://ollama.com for Cloud
+OLLAMA_API_KEY=                      # Cloud only; a local server needs none
+```
+
+Ollama runs through `/api/chat` with the same tool loop, and uses Ollama's
+JSON-schema `format` for structured output, so extraction stays validated.
+Temperature defaults to `0` — reading a field off a document should give the
+same answer twice. Pick a model that supports tools; `RECALLER_OLLAMA_NUM_CTX`
+raises the context window for long statements.
+
+On `RECALLER_LLM_PROVIDER=auto` (the default) Claude wins if its key is present,
+then Ollama if `OLLAMA_HOST` or `OLLAMA_API_KEY` is set, else no model at all.
+`GET /api/health` reports which one is live.
+
+Neither provider can reach the credit engine, the policy engine or the what-if
+solver. Whatever the model, the money is computed by code.
 
 ## What makes it defensible
 
