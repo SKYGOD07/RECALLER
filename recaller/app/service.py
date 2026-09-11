@@ -219,13 +219,23 @@ class UnderwritingService:
             "indicative": True,
         }
 
+    def _llm_status(self) -> Dict[str, Any]:
+        # A provider built from the environment reports through provider_status,
+        # which knows why it was chosen; one injected by a test reports itself.
+        if self.provider is None:
+            status = provider_status()
+            if status.get("enabled"):  # configured, but this instance was built without a model
+                status = {**status, "enabled": False,
+                          "warnings": [*status.get("warnings", []), "A model is configured but this server instance runs without one."]}
+            return status
+        if getattr(self.provider, "name", "") in ("anthropic", "ollama"):
+            return provider_status()
+        return {"enabled": True, "provider": getattr(self.provider, "name", "custom"), "model": getattr(self.provider, "model", None)}
+
     def status(self) -> Dict[str, Any]:
         return {
             "db": {"ok": True, "path": str(self.db.path), "counts": self.db.counts()},
-            # A provider built from the environment reports through provider_status,
-            # which knows why it was chosen; one injected by a test reports itself.
-            "llm": provider_status() if self.provider is None or getattr(self.provider, "name", "") in ("anthropic", "ollama")
-            else {"enabled": True, "provider": getattr(self.provider, "name", "custom"), "model": getattr(self.provider, "model", None)},
+            "llm": self._llm_status(),
             "documents": {"engine": "PyMuPDF", "version": pymupdf.VersionBind, "ocr": ocr_available()},
             "jobs": {"running": sum(1 for j in self.jobs.list() if j["status"] == "RUNNING"), "subscribers": self.jobs.subscriber_count()},
         }
