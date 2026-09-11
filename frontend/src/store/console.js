@@ -16,6 +16,7 @@ let state = {
   runtime: getRuntime(),
   policy: null,
   stagePlan: [],
+  vocab: null,
   applications: [],
   /** id → { application, documents, record, progress, replays } */
   details: {},
@@ -65,12 +66,17 @@ export function boot() {
   booting = (async () => {
     try {
       await api.ready()
-      const [policy, stagePlan, applications] = await Promise.all([
-        api.getPolicy(),
-        api.getStagePlan(),
-        api.listApplications(),
-      ])
-      set({ boot: 'READY', policy, stagePlan, applications, runtime: getRuntime() })
+      // One call: policy, stage plan, queue and vocabulary in the same snapshot,
+      // so the console cannot start half-configured.
+      const snapshot = await api.bootstrap()
+      set({
+        boot: 'READY',
+        policy: snapshot.policy,
+        stagePlan: snapshot.stage_plan,
+        applications: snapshot.applications,
+        vocab: snapshot.vocab ?? null,
+        runtime: getRuntime(),
+      })
     } catch (err) {
       set({ boot: 'ERROR', bootError: err.message, runtime: getRuntime() })
     } finally {

@@ -97,6 +97,8 @@ function ReplayRow({ replay }) {
 
 export default function Audit({ record, replays, policy, busy, onReplay, onReplayAmended }) {
   const ledger = record.audit ?? { events: [] }
+  // The runtime recomputes the chain when it serves the record; we report its answer.
+  const verification = record.audit_verification ?? null
   const foirRule = policy?.rules?.find((r) => r.code === 'P-FOIR-01')
   const ltvRule = policy?.rules?.find((r) => r.code === 'P-LTV-01')
 
@@ -120,6 +122,13 @@ export default function Audit({ record, replays, policy, busy, onReplay, onRepla
           <div className="fprint__main">
             <span className="caps t3">Ledger head · FNV-1a 64-bit chain</span>
             <strong className="fprint__hash mono">{fingerprint(ledger.head, 6)}</strong>
+            {verification ? (
+              <Tag kind={verification.ok ? 'approve' : 'reject'}>
+                {verification.ok
+                  ? 'Chain verified'
+                  : `Chain broken at event ${num(verification.brokenAt ?? verification.broken_at)}`}
+              </Tag>
+            ) : null}
             <p className="fprint__note">Same inputs plus same policy produce the same decision.</p>
           </div>
           <dl className="fprint__facts">

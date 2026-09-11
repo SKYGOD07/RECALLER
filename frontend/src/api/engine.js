@@ -190,10 +190,12 @@ export function createEngineTransport() {
     async getApplication(id) {
       const application = state.applications.get(id)
       if (!application) throw new Error(`Application ${id} not found`)
+      const record = state.records.get(id) ?? null
       return {
         application,
         documents: (state.bundles.get(id) ?? []).map(({ payload, degrade, ...d }) => d),
-        record: state.records.get(id) ?? null,
+        // the backend stamps the ledger verification onto the record it serves
+        record: record && { ...record, audit_verification: verifyLedger(record.audit ?? { events: [] }) },
         progress: state.progress.get(id) ?? blankProgress(),
         replays: state.replays.get(id) ?? [],
       }

@@ -35,15 +35,18 @@ async function resolve() {
   if (REQUESTED_TRANSPORT === TRANSPORTS.HTTP) {
     const http = createHttpTransport()
     try {
-      const health = await http.health()
+      // bootstrap is the probe: if it answers, the backend is genuinely usable,
+      // and the versions it reports are the ones the console will display.
+      const boot = await http.bootstrap()
       transport = http
       runtime = {
         ...runtime,
         transport: TRANSPORTS.HTTP,
         label: TRANSPORT_LABELS[TRANSPORTS.HTTP],
         status: 'ONLINE',
-        engine_version: health.engine_version,
-        workflow_version: health.workflow_version,
+        engine_version: boot.engine_version,
+        workflow_version: boot.workflow_version,
+        llm: boot.llm ?? null,
       }
       return transport
     } catch (err) {
@@ -56,15 +59,16 @@ async function resolve() {
   }
 
   const engine = createEngineTransport()
-  const health = await engine.health()
+  const boot = await engine.bootstrap()
   transport = engine
   runtime = {
     ...runtime,
     transport: TRANSPORTS.ENGINE,
     label: TRANSPORT_LABELS[TRANSPORTS.ENGINE],
     status: 'ONLINE',
-    engine_version: health.engine_version,
-    workflow_version: health.workflow_version,
+    engine_version: boot.engine_version,
+    workflow_version: boot.workflow_version,
+    llm: boot.llm ?? null,
   }
   return transport
 }
@@ -77,6 +81,7 @@ const call = (method) => async (...args) => {
 export const api = {
   ready: resolve,
   health: call('health'),
+  bootstrap: call('bootstrap'),
   getPolicy: call('getPolicy'),
   getStagePlan: call('getStagePlan'),
   listApplications: call('listApplications'),
@@ -86,6 +91,7 @@ export const api = {
   replayApplication: call('replayApplication'),
   solveWhatIf: call('solveWhatIf'),
   simulateScenario: call('simulateScenario'),
+  verifyAudit: call('verifyAudit'),
   resetConsole: call('resetConsole'),
 }
 
