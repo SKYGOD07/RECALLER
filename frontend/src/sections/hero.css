@@ -95,7 +95,7 @@
   z-index: 1;
   width: 100%;
   padding-block: clamp(96px, 12vh, 150px) clamp(28px, 5vh, 52px);
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 .hero__copy {

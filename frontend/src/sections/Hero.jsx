@@ -46,10 +46,11 @@ export default function Hero() {
       })
 
       // Hand-off: the hero settles back rather than simply scrolling away.
+      // Transform and opacity only — animating a filter across a subtree this
+      // large is the most expensive thing a scrub can do, and costs frames.
       gsap.to(q('.hero__inner'), {
         scale: 0.96,
         opacity: 0,
-        filter: 'blur(7px)',
         ease: 'none',
         scrollTrigger: { trigger: root, start: '35% top', end: 'bottom top', scrub: 0.5 },
       })
