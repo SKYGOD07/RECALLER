@@ -13,7 +13,8 @@
     "verify": "node scripts/verify-pipeline.mjs",
     "verify:verbose": "node scripts/verify-pipeline.mjs --verbose",
     "test": "node scripts/test-engine.mjs",
-    "check": "npm run test && npm run verify",
+    "test:agent": "node scripts/test-agent.mjs",
+    "check": "npm run test && npm run test:agent && npm run verify",
     "install:all": "npm --prefix app install && npm --prefix frontend install"
   },
   "engines": {

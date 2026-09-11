@@ -41,14 +41,20 @@ RECALLER/
 │   ├── policy-engine/     rule evaluation -> verdict + reason codes
 │   ├── narration/         credit memo assembly
 │   ├── whatif/            exact minimum-change solver
-│   └── orchestrator/      stage sequencing, pause/resume, replay
+│   ├── orchestrator/      stage sequencing, pause/resume, replay
+│   └── agent/             AI reasoning runtime ported from Hermes Agent — reads, never computes
 ├── policy/              policy.v1.json - every threshold in the system
 ├── data/synthetic/      Eight borrower bundles covering every decision path
 ├── workflows/           n8n workflow definitions                [Phase 4]
 ├── installer/           Windows packaging
 ├── scripts/             Launcher, tests, pipeline verification
-└── n8n-master/          Vendored n8n source - separate, untouched
+├── n8n-master/          n8n source - local reference only, git-ignored
+└── hermes/              Hermes Agent source - local reference only, git-ignored
 ```
+
+`docs/`, `n8n-master/` and `hermes/` are kept on disk for development and are
+not published. What RECALLER uses from Hermes lives in `packages/agent`, ported
+to JavaScript under its MIT licence (see `packages/agent/THIRD_PARTY_NOTICES.md`).
 
 ## Running it
 
@@ -135,4 +141,4 @@ here can be mistaken for live KYC material.
 
 Phases 2 and 4 are a transport change, not a rewrite: every screen already
 talks to `app/src/services/api.js` and nothing else, and each function there
-maps one-to-one onto its future endpoint. See `docs/ARCHITECTURE.md`.
+maps one-to-one onto its future endpoint.
