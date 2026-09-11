@@ -179,7 +179,7 @@ async def run_underwriting(
     )
 
     # Extraction
-    extraction = extract_bundle(
+    extraction = await extract_bundle(
         documents=documents,
         application=application,
         adapter=adapter,
