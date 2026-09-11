@@ -8,15 +8,15 @@
 
 import { useState, useSticky } from '@/hooks/index.js';
 import { Card, ActorTag, Icon, PageHead, CopyButton, formatClock } from '@/components/ui.jsx';
-import { STAGE_LABELS, verifyLedger } from '@core/audit.js';
-import { POLICY } from '@/services/api.js';
+import { STAGE_LABELS } from '@/lib/vocab.js';
 
 export default function AuditTrail({ application, record }) {
   const [expanded, setExpanded] = useState(null);
   const [filter, setFilter] = useSticky('audit.filter', 'all');
 
   const ledger = record.audit;
-  const integrity = verifyLedger(ledger);
+  // Recomputed server-side on every read (GET /api/applications/:id, and on demand at .../audit/verify).
+  const integrity = record.audit_verification ?? { ok: false, brokenAt: null, reason: 'not verified' };
 
   const events = ledger.events.filter((e) => {
     if (filter === 'engine') return e.actor === 'ENGINE';

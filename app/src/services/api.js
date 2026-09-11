@@ -1,94 +1,148 @@
 /**
- * RECALLER console — service layer.
+ * RECALLER console — HTTP client for the Python backend.
  *
- * Every screen talks to the application through this module and nothing else.
- * It currently runs the deterministic domain packages in-process (Phase 1/3),
- * which is what makes the demo installable with no server. Pointing it at the
- * RECALLER backend is a transport change inside this one file: each function
- * below maps one-to-one onto an endpoint in app-backend.
+ * Every screen talks to the application through this module and nothing else,
+ * and this module talks to nothing but the backend's /api. The console holds
+ * no credit logic: every figure it shows arrived here already computed.
  *
- *   listApplications   → GET    /api/applications
- *   getApplication     → GET    /api/applications/:id
- *   createApplication  → POST   /api/applications
- *   startUnderwriting  → POST   /api/applications/:id/underwrite
- *   resumeUnderwriting → POST   /api/applications/:id/resume
- *   replayApplication  → POST   /api/applications/:id/replay
- *   solveWhatIf        → POST   /api/applications/:id/whatif
- *   simulateScenario   → POST   /api/applications/:id/simulate
+ *   seed                → GET    /api/bootstrap
+ *   loadApplication     → GET    /api/applications/:id
+ *   createApplication   → POST   /api/applications
+ *   uploadDocument      → POST   /api/applications/:id/documents        (multipart)
+ *   attachSample        → POST   /api/applications/:id/documents/sample
+ *   startUnderwriting   → POST   /api/applications/:id/underwrite       (202 + SSE)
+ *   resumeUnderwriting  → POST   /api/applications/:id/resume           (202 + SSE)
+ *   replayApplication   → POST   /api/applications/:id/replay
+ *   solveWhatIf         → POST   /api/applications/:id/whatif
+ *   simulateScenario    → POST   /api/applications/:id/simulate
+ *   startAgentRun       → POST   /api/applications/:id/agent/:kind
  *
- * The UI performs no credit arithmetic and evaluates no policy rule. When a
- * number appears on a screen, it arrived from here already computed.
+ * Every request carries an X-Request-ID (ui-…); the backend echoes it, logs it
+ * at /api/diagnostics/requests and puts it in every error body, so a failure in
+ * the UI can be matched to the exact server-side request.
  */
 
-import policyV1 from '@policy/policy.v1.json';
-import { SYNTHETIC_APPLICATIONS } from '@synthetic/applications.js';
-import {
-  runUnderwriting,
-  resumeUnderwriting as resumeRun,
-  replay as replayRun,
-  runWhatIf,
-  runSimulation,
-  STAGE_PLAN,
-} from '@orchestrator/index.js';
-import { APP_STATUS } from '@core/constants.js';
+import { fillVocab } from '@/lib/vocab.js';
 
-export const POLICY = policyV1;
-export { STAGE_PLAN };
+export const MODE = 'http';
+const BASE = (import.meta.env.VITE_RECALLER_API ?? '').replace(/\/$/, '');
 
-/** Transport mode. `local` runs the engine in the browser; `http` calls app-backend. */
-export const MODE = import.meta.env.VITE_RECALLER_API ? 'http' : 'local';
-const BASE = import.meta.env.VITE_RECALLER_API ?? '';
+/** Filled from /api/bootstrap before the console renders. */
+export const POLICY = {};
+export const STAGE_PLAN = [];
+export let POLICY_HASH = '';
+export let LLM = { enabled: false };
+export let LIMITS = { max_upload_mb: 20 };
 
 /* ================================================================== *
- * Store
+ * Transport
  * ================================================================== */
 
-const LS_KEY = 'recaller.console.v1';
+export class ApiError extends Error {
+  constructor(status, body, requestId, method, path) {
+    super(body?.error?.message ?? `HTTP ${status} on ${method} ${path}`);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = body?.error?.code ?? `HTTP_${status}`;
+    this.details = body?.error?.details;
+    this.requestId = requestId ?? body?.error?.request_id ?? null;
+    this.method = method;
+    this.path = path;
+  }
+}
+
+let seq = 0;
+const newRequestId = () => `ui-${Date.now().toString(36)}-${(seq++).toString(36)}`;
+
+/** The last 150 requests this browser made, newest first (shown on the System screen). */
+export const clientLog = [];
+
+async function request(method, path, { json, form, signal } = {}) {
+  const requestId = newRequestId();
+  const headers = { Accept: 'application/json', 'X-Request-ID': requestId };
+  let body;
+  if (json !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(json);
+  } else if (form) {
+    body = form;
+  }
+  const started = performance.now();
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, { method, headers, body, signal });
+  } catch (err) {
+    logCall({ method, path, status: 0, ms: performance.now() - started, requestId, error: 'NETWORK' });
+    const e = new ApiError(0, { error: { code: 'NETWORK', message: `Could not reach the RECALLER backend (${err.message}). Is it running?` } }, requestId, method, path);
+    throw e;
+  }
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { error: { code: 'BAD_RESPONSE', message: text.slice(0, 200) } };
+  }
+  const serverMs = Number(/dur=([\d.]+)/.exec(res.headers.get('Server-Timing') ?? '')?.[1]);
+  logCall({
+    method,
+    path,
+    status: res.status,
+    ms: performance.now() - started,
+    serverMs: Number.isFinite(serverMs) ? serverMs : null,
+    requestId: res.headers.get('X-Request-ID') ?? requestId,
+    error: res.ok ? null : data?.error?.code,
+  });
+  if (!res.ok) throw new ApiError(res.status, data, res.headers.get('X-Request-ID') ?? requestId, method, path);
+  return data;
+}
+
+function logCall(entry) {
+  clientLog.unshift({ at: new Date().toISOString(), ...entry, ms: Math.round(entry.ms) });
+  clientLog.length = Math.min(clientLog.length, 150);
+}
+
+/* ================================================================== *
+ * Store (useSyncExternalStore)
+ * ================================================================== */
+
 const STORE_KEY = '__recaller_console_store__';
 
 /**
- * The store is anchored on globalThis rather than held in module scope.
- *
- * Vite's HMR re-imports a changed module under a cache-busting URL, which
- * creates a second instance of every module downstream of it. Module-level
- * mutable state would silently fork at that point — the mounted tree keeps
- * reading one copy while writes land in the other, and the console appears
- * empty. Anchoring on the global keeps exactly one store across reloads.
+ * Anchored on globalThis so Vite HMR re-imports never fork the store — a
+ * forked store leaves the mounted tree reading one copy while writes land in
+ * the other, and the console appears empty.
  */
 const state =
   globalThis[STORE_KEY] ??
   (globalThis[STORE_KEY] = {
-    /** application id → header (borrower, asset, loan request, status) */
     applications: new Map(),
-    /** application id → document bundle (with synthetic payloads) */
     bundles: new Map(),
-    /** application id → completed or suspended underwriting record */
     records: new Map(),
-    /** application id → { [stageId]: 'PENDING' | 'RUNNING' | 'DONE' | 'HELD' } */
     progress: new Map(),
-    /** application id → replay results, newest first */
     replays: new Map(),
+    jobs: new Map(),
+    agentRuns: new Map(),
+    loaded: new Set(),
+    streams: new Map(),
     listeners: new Set(),
     snapshotToken: 0,
     snapshot: null,
     seeded: false,
-    sequence: 500,
+    lastError: null,
   });
-
-const listeners = state.listeners;
 
 function emit() {
   state.snapshotToken += 1;
   state.snapshot = null;
-  listeners.forEach((fn) => fn());
+  state.listeners.forEach((fn) => fn());
 }
 
 export function subscribe(fn) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
+  state.listeners.add(fn);
+  return () => state.listeners.delete(fn);
 }
 
-/** Stable snapshot for useSyncExternalStore — identity changes only on emit. */
 export function getSnapshot() {
   if (state.snapshot === null) {
     state.snapshot = {
@@ -97,94 +151,26 @@ export function getSnapshot() {
       records: state.records,
       progress: state.progress,
       replays: state.replays,
+      lastError: state.lastError,
     };
   }
   return state.snapshot;
 }
 
-/* ---- seeding & persistence ---------------------------------------- */
-
-/**
- * Persistence stores intent, not output: the application header, which
- * documents were attached, and what the officer decided. Records are
- * regenerated by re-running the pipeline, which is safe precisely because the
- * pipeline is deterministic — a rehydrated record is bit-identical to the one
- * that was stored, and far smaller on disk.
- */
-function persist() {
-  try {
-    const payload = {
-      v: 1,
-      apps: [...state.applications.values()].map((a) => ({
-        id: a.id,
-        header: stripRuntime(a),
-        processed: state.records.has(a.id),
-        resolutions: state.records.get(a.id)?.resolutions ?? [],
-        custom: a.custom ?? false,
-        documents: a.custom ? state.bundles.get(a.id) : null,
-      })),
-    };
-    localStorage.setItem(LS_KEY, JSON.stringify(payload));
-  } catch {
-    /* storage unavailable (private window, quota) — the console still works */
-  }
-}
-
-function stripRuntime(a) {
-  const { documents, scenario, ...rest } = a;
-  return rest;
-}
-
-export async function seed() {
-  if (state.seeded) return;
-  state.seeded = true;
-
-  SYNTHETIC_APPLICATIONS.forEach((app) => {
-    const { documents, scenario, ...header } = app;
-    state.applications.set(app.id, {
-      ...header,
-      scenario,
-      status: APP_STATUS.DRAFT,
-      decision: null,
-      updated_at: header.created_at,
-      custom: false,
-      document_count: documents.length,
-    });
-    state.bundles.set(app.id, documents);
-    state.progress.set(app.id, blankProgress());
-  });
-
-  // Paint the queue before rehydration runs, so the console is usable
-  // immediately and a slow or failing restore can never leave it blank.
+/** Surface a failure in the console's error banner (with its request id). */
+export function reportError(err) {
+  state.lastError = {
+    message: err?.message ?? String(err),
+    code: err?.code ?? null,
+    requestId: err?.requestId ?? null,
+    at: new Date().toISOString(),
+  };
+  console.error('[recaller]', err);
   emit();
+}
 
-  let saved = null;
-  try {
-    saved = JSON.parse(localStorage.getItem(LS_KEY) ?? 'null');
-  } catch {
-    saved = null;
-  }
-  if (!saved?.apps) return;
-
-  // Restore what the officer had already done. Each entry is restored
-  // independently: one unreadable record must not cost the officer the rest of
-  // the queue, so a failure is reported and the loop continues.
-  for (const entry of saved.apps) {
-    try {
-      if (entry.custom && entry.documents) {
-        state.applications.set(entry.id, { ...entry.header, custom: true });
-        state.bundles.set(entry.id, entry.documents);
-        state.progress.set(entry.id, blankProgress());
-      }
-      if (entry.processed && state.bundles.has(entry.id)) {
-        // eslint-disable-next-line no-await-in-loop
-        await rehydrate(entry.id, entry.resolutions ?? []);
-      }
-    } catch (err) {
-      console.error(`[recaller] could not restore ${entry.id}; it returns to its unprocessed state.`, err);
-    }
-  }
-
+export function clearError() {
+  state.lastError = null;
   emit();
 }
 
@@ -192,250 +178,311 @@ function blankProgress() {
   return Object.fromEntries(STAGE_PLAN.map((s) => [s.id, 'PENDING']));
 }
 
-async function rehydrate(id, resolutions) {
-  const header = state.applications.get(id);
-  const documents = state.bundles.get(id);
-  if (!header || !documents) return;
-  let record = await runUnderwriting({
-    application: toRequest(header),
-    documents,
-    policy: POLICY,
-    now: header.created_at,
-  });
-  if (record.status === APP_STATUS.WAITING_FOR_OFFICER && resolutions.length) {
-    record = await resumeRun({ record, resolutions, policy: POLICY, now: header.created_at });
-  }
-  commit(id, record);
-}
-
-function toRequest(header) {
-  const { scenario, status, decision, updated_at, custom, document_count, ...rest } = header;
-  return rest;
-}
-
-function commit(id, record) {
-  state.records.set(id, record);
-  const header = state.applications.get(id);
-  state.applications.set(id, {
-    ...header,
-    status: record.status,
-    decision: record.decision?.decision ?? null,
-    updated_at: record.generated_at ?? new Date().toISOString(),
-  });
-  const progress = blankProgress();
-  const completed = record.checkpoint?.completed_stages ?? STAGE_PLAN.map((s) => s.id);
-  completed.forEach((s) => {
-    progress[s] = 'DONE';
-  });
-  if (record.status === APP_STATUS.WAITING_FOR_OFFICER) progress.GATE = 'HELD';
-  state.progress.set(id, progress);
-}
-
 /* ================================================================== *
- * Read
+ * Bootstrap and reads
  * ================================================================== */
 
-export function listApplications() {
-  return getSnapshot().applications;
-}
-
-export function getApplication(id) {
-  return state.applications.get(id) ?? null;
-}
-
-export function getDocuments(id) {
-  return (state.bundles.get(id) ?? []).map(({ payload, degrade, ...d }) => d);
-}
-
-export function getRecord(id) {
-  return state.records.get(id) ?? null;
-}
-
-export function getProgress(id) {
-  return state.progress.get(id) ?? blankProgress();
-}
-
-export function getReplays(id) {
-  return state.replays.get(id) ?? [];
-}
-
-/* ================================================================== *
- * Write
- * ================================================================== */
-
-export function createApplication(form, documents) {
-  state.sequence += 1;
-  const id = `RCL-2026-0${state.sequence}`;
-  const header = {
-    id,
-    borrower_name: form.borrower_name,
-    segment: form.segment,
-    loan_amount: Number(form.loan_amount),
-    tenure_months: Number(form.tenure_months),
-    declared_monthly_income: Number(form.declared_monthly_income),
-    branch: form.branch,
-    officer: form.officer,
-    dealer: form.dealer,
-    occupation: form.occupation,
-    created_at: new Date().toISOString(),
-    status: APP_STATUS.DRAFT,
-    decision: null,
-    updated_at: new Date().toISOString(),
-    custom: true,
-    document_count: documents.length,
-  };
-  state.applications.set(id, header);
-  state.bundles.set(id, documents);
-  state.progress.set(id, blankProgress());
-  persist();
+export async function seed() {
+  if (state.seeded) return;
+  const boot = await request('GET', '/api/bootstrap');
+  Object.keys(POLICY).forEach((k) => delete POLICY[k]);
+  Object.assign(POLICY, boot.policy);
+  STAGE_PLAN.splice(0, STAGE_PLAN.length, ...boot.stage_plan);
+  POLICY_HASH = boot.policy_hash;
+  LLM = boot.llm;
+  LIMITS = boot.limits;
+  fillVocab(boot);
+  state.applications = new Map(boot.applications.map((a) => [a.id, a]));
+  state.seeded = true;
   emit();
-  return id;
 }
+
+export async function refreshApplications() {
+  const list = await request('GET', '/api/applications');
+  state.applications = new Map(list.map((a) => [a.id, a]));
+  emit();
+  return list;
+}
+
+function applyDetail(detail) {
+  const id = detail.application.id;
+  state.applications.set(id, detail.application);
+  state.bundles.set(id, detail.documents);
+  if (detail.record) state.records.set(id, detail.record);
+  else state.records.delete(id);
+  state.progress.set(id, detail.progress);
+  state.replays.set(id, detail.replays);
+  state.jobs.set(id, detail.job);
+  state.agentRuns.set(id, detail.agent_runs ?? []);
+  state.loaded.add(id);
+}
+
+export async function loadApplication(id) {
+  const detail = await request('GET', `/api/applications/${encodeURIComponent(id)}`);
+  applyDetail(detail);
+  emit();
+  if (detail.job?.status === 'RUNNING') followJob(id);
+  return detail;
+}
+
+/** Load a file's full state the first time a screen needs it. */
+export function ensureApplication(id) {
+  if (!id || state.loaded.has(id)) return Promise.resolve();
+  state.loaded.add(id);
+  return loadApplication(id).catch((err) => {
+    state.loaded.delete(id);
+    if (err.status !== 404) reportError(err);
+  });
+}
+
+export const listApplications = () => getSnapshot().applications;
+export const getApplication = (id) => state.applications.get(id) ?? null;
+export const getDocuments = (id) => state.bundles.get(id) ?? [];
+export const getRecord = (id) => state.records.get(id) ?? null;
+export const getProgress = (id) => state.progress.get(id) ?? blankProgress();
+export const getReplays = (id) => state.replays.get(id) ?? [];
+export const getJob = (id) => state.jobs.get(id) ?? null;
+export const getAgentRuns = (id) => state.agentRuns.get(id) ?? [];
+
+/* ================================================================== *
+ * Runs — 202 Accepted, then follow the job over Server-Sent Events
+ * ================================================================== */
 
 /**
- * Stage pacing.
- *
- * The deterministic engine returns in single-digit milliseconds, which would
- * make the processing view a flicker. These delays exist so a human can watch
- * the workflow advance and see which stage is executing — they model the
- * latency of real document understanding, and are replaced by genuine n8n
- * execution timings once the orchestrator is wired in (Phase 4).
+ * Follow the application's running job. Resolves with the finished record.
+ * `once=true` makes the server close the stream after the job ends (or at once
+ * if it already has), so EventSource never reconnects into a finished job.
  */
-const STAGE_PACING = {
-  INGEST: 380,
-  KYC: 900,
-  BANK: 1500,
-  PLATFORM: 850,
-  INVOICE: 780,
-  VALIDATE: 420,
-  RECONCILE: 620,
-  GATE: 340,
-  CREDIT: 520,
-  POLICY: 460,
-  DECISION: 380,
-  MEMO: 700,
-};
+function followJob(id) {
+  if (state.streams.has(id)) return state.streams.get(id);
+  const promise = new Promise((resolve, reject) => {
+    let settled = false;
+    const es = new EventSource(`${BASE}/api/applications/${encodeURIComponent(id)}/events?once=true`);
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const finish = async (endEvent) => {
+      if (settled) return;
+      settled = true;
+      es.close();
+      state.streams.delete(id);
+      try {
+        const detail = await loadApplication(id);
+        if (endEvent?.status === 'FAILED') {
+          const err = new ApiError(500, { error: { code: 'RUN_FAILED', message: endEvent.error ?? 'The run failed.' } }, null, 'JOB', id);
+          reportError(err);
+          reject(err);
+        } else {
+          resolve(detail.record);
+        }
+      } catch (err) {
+        reject(err);
+      }
+    };
 
-export async function startUnderwriting(id, { paced = true } = {}) {
+    es.addEventListener('snapshot', (e) => {
+      const data = JSON.parse(e.data);
+      state.progress.set(id, data.progress);
+      emit();
+    });
+    es.addEventListener('stage', (e) => {
+      const data = JSON.parse(e.data);
+      state.progress.set(id, { ...getProgress(id), [data.id]: data.status });
+      emit();
+    });
+    es.addEventListener('end', (e) => finish(JSON.parse(e.data)));
+    es.onerror = () => {
+      // EventSource retries on its own; if the stream is gone for good, fall back to polling.
+      if (es.readyState === EventSource.CLOSED && !settled) pollUntilIdle(id).then(() => finish(null), reject);
+    };
+  });
+  state.streams.set(id, promise);
+  return promise;
+}
+
+async function pollUntilIdle(id) {
+  for (;;) {
+    const detail = await request('GET', `/api/applications/${encodeURIComponent(id)}`);
+    if (detail.job?.status !== 'RUNNING') return detail;
+    await new Promise((r) => setTimeout(r, 800));
+  }
+}
+
+function markProcessing(id) {
   const header = state.applications.get(id);
-  const documents = state.bundles.get(id);
-  if (!header || !documents) throw new Error(`Unknown application ${id}`);
-
-  setStatus(id, APP_STATUS.PROCESSING);
+  if (header) state.applications.set(id, { ...header, status: 'PROCESSING' });
   state.progress.set(id, blankProgress());
   emit();
+}
 
-  const record = await runUnderwriting({
-    application: toRequest(header),
-    documents,
-    policy: POLICY,
-    onStage: async ({ id: stageId, status }) => {
-      const p = { ...state.progress.get(id), [stageId]: status };
-      state.progress.set(id, p);
-      emit();
-      if (paced && status === 'RUNNING') await sleep(STAGE_PACING[stageId] ?? 400);
-    },
-  });
-
-  commit(id, record);
-  persist();
-  emit();
-  return record;
+export async function startUnderwriting(id, { paced = true } = {}) {
+  markProcessing(id);
+  try {
+    await request('POST', `/api/applications/${encodeURIComponent(id)}/underwrite`, { json: { paced } });
+    return await followJob(id);
+  } catch (err) {
+    await loadApplication(id).catch(() => {});
+    reportError(err);
+    throw err;
+  }
 }
 
 export async function resumeUnderwriting(id, resolutions, { paced = true } = {}) {
-  const record = state.records.get(id);
-  if (!record) throw new Error(`No suspended execution for ${id}`);
-
-  setStatus(id, APP_STATUS.PROCESSING);
+  const header = state.applications.get(id);
+  if (header) state.applications.set(id, { ...header, status: 'PROCESSING' });
   emit();
-
-  const next = await resumeRun({
-    record,
-    resolutions,
-    policy: POLICY,
-    onStage: async ({ id: stageId, status }) => {
-      const p = { ...state.progress.get(id), [stageId]: status };
-      state.progress.set(id, p);
-      emit();
-      if (paced && status === 'RUNNING') await sleep(STAGE_PACING[stageId] ?? 400);
-    },
-  });
-
-  commit(id, next);
-  persist();
-  emit();
-  return next;
+  try {
+    await request('POST', `/api/applications/${encodeURIComponent(id)}/resume`, { json: { resolutions, paced } });
+    return await followJob(id);
+  } catch (err) {
+    await loadApplication(id).catch(() => {});
+    reportError(err);
+    throw err;
+  }
 }
 
 export async function replayApplication(id, { policy = POLICY, label } = {}) {
-  const record = state.records.get(id);
-  if (!record) throw new Error(`Nothing to replay for ${id}`);
-  const result = await replayRun({ record, policy, label });
-  state.replays.set(id, [result, ...(state.replays.get(id) ?? [])].slice(0, 12));
+  const result = await request('POST', `/api/applications/${encodeURIComponent(id)}/replay`, { json: { policy, label } });
+  state.replays.set(id, [result, ...getReplays(id)].slice(0, 12));
   emit();
   return result;
 }
 
-export function solveWhatIf(id, target) {
-  const record = state.records.get(id);
-  if (!record?.credit) return null;
-  return runWhatIf({ record, policy: POLICY, target });
+export function solveWhatIf(id, target = 'APPROVE') {
+  return request('POST', `/api/applications/${encodeURIComponent(id)}/whatif`, { json: { target } });
 }
 
 export function simulateScenario(id, scenario) {
-  const record = state.records.get(id);
-  if (!record?.credit) return null;
-  return runSimulation({ record, policy: POLICY, scenario });
+  return request('POST', `/api/applications/${encodeURIComponent(id)}/simulate`, { json: { scenario } });
 }
 
-function setStatus(id, status) {
-  const header = state.applications.get(id);
-  state.applications.set(id, { ...header, status, updated_at: new Date().toISOString() });
+export function verifyAudit(id) {
+  return request('GET', `/api/applications/${encodeURIComponent(id)}/audit/verify`);
 }
+
+/* ================================================================== *
+ * Origination
+ * ================================================================== */
+
+export async function createApplication(form) {
+  const header = await request('POST', '/api/applications', {
+    json: {
+      borrower_name: form.borrower_name,
+      segment: form.segment,
+      loan_amount: Number(form.loan_amount),
+      tenure_months: Number(form.tenure_months),
+      declared_monthly_income: Number(form.declared_monthly_income),
+      branch: form.branch ?? '',
+      officer: form.officer ?? '',
+      dealer: form.dealer ?? '',
+      occupation: form.occupation ?? '',
+    },
+  });
+  state.applications.set(header.id, header);
+  state.bundles.set(header.id, []);
+  state.progress.set(header.id, blankProgress());
+  emit();
+  return header.id;
+}
+
+async function afterDocumentChange(id) {
+  await loadApplication(id);
+}
+
+export async function uploadDocument(id, type, file) {
+  const form = new FormData();
+  form.append('type', type);
+  form.append('file', file, file.name);
+  const doc = await request('POST', `/api/applications/${encodeURIComponent(id)}/documents`, { form });
+  await afterDocumentChange(id);
+  return doc;
+}
+
+export async function attachSample(id, type) {
+  const doc = await request('POST', `/api/applications/${encodeURIComponent(id)}/documents/sample`, { json: { type } });
+  await afterDocumentChange(id);
+  return doc;
+}
+
+export async function removeDocument(id, docId) {
+  await request('DELETE', `/api/applications/${encodeURIComponent(id)}/documents/${encodeURIComponent(docId)}`);
+  await afterDocumentChange(id);
+}
+
+export function getDocumentDetail(docId) {
+  return request('GET', `/api/documents/${encodeURIComponent(docId)}`);
+}
+
+export function getQuote(segment, amount, tenure) {
+  const q = new URLSearchParams({ segment, amount: String(amount), tenure: String(tenure) });
+  return request('GET', `/api/quote?${q}`);
+}
+
+/* ================================================================== *
+ * Agents (advisory; need a configured model)
+ * ================================================================== */
+
+export async function startAgentRun(id, kind) {
+  const run = await request('POST', `/api/applications/${encodeURIComponent(id)}/agent/${kind}`);
+  state.agentRuns.set(id, [run, ...getAgentRuns(id)]);
+  emit();
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const runs = await request('GET', `/api/applications/${encodeURIComponent(id)}/agent-runs`);
+    state.agentRuns.set(id, runs);
+    emit();
+    const mine = runs.find((r) => r.id === run.id);
+    if (!mine || mine.status !== 'RUNNING') return mine;
+  }
+}
+
+/* ================================================================== *
+ * Policy helpers, reset
+ * ================================================================== */
 
 /**
  * Build an amended policy for "replay with current policy" — the officer edits
  * a threshold and the same frozen evidence is judged against the new rulebook.
+ * The backend evaluates it; this only assembles the document.
  */
 export function amendPolicy(overrides) {
-  const rules = POLICY.rules.map((r) =>
-    overrides[r.code] === undefined ? r : { ...r, threshold: Number(overrides[r.code]) },
-  );
+  const rules = POLICY.rules.map((r) => (overrides[r.code] === undefined ? r : { ...r, threshold: Number(overrides[r.code]) }));
   return { ...POLICY, rules, version: `${POLICY.version}+local`, effective_date: new Date().toISOString().slice(0, 10) };
 }
 
-/** Returns every demo file to its unprocessed state and discards custom ones. */
-export function resetConsole() {
+export async function resetConsole() {
   try {
-    localStorage.removeItem(LS_KEY);
-  } catch {
-    /* ignore */
+    const out = await request('POST', '/api/reset');
+    ['records', 'replays', 'bundles', 'progress', 'jobs', 'agentRuns'].forEach((k) => state[k].clear());
+    state.loaded.clear();
+    state.applications = new Map(out.applications.map((a) => [a.id, a]));
+    emit();
+  } catch (err) {
+    reportError(err);
   }
-  state.records.clear();
-  state.replays.clear();
-
-  [...state.applications.values()]
-    .filter((a) => a.custom)
-    .forEach((a) => {
-      state.applications.delete(a.id);
-      state.bundles.delete(a.id);
-      state.progress.delete(a.id);
-    });
-
-  SYNTHETIC_APPLICATIONS.forEach((app) => {
-    const header = state.applications.get(app.id);
-    if (header) {
-      state.applications.set(app.id, {
-        ...header,
-        status: APP_STATUS.DRAFT,
-        decision: null,
-        updated_at: app.created_at,
-      });
-      state.progress.set(app.id, blankProgress());
-    }
-  });
-  emit();
 }
+
+/* ================================================================== *
+ * Diagnostics (System screen)
+ * ================================================================== */
+
+export const diagnostics = {
+  health: () => request('GET', '/api/health'),
+  config: () => request('GET', '/api/diagnostics/config'),
+  requests: (limit = 100) => request('GET', `/api/diagnostics/requests?limit=${limit}`),
+  clearRequests: () => request('DELETE', '/api/diagnostics/requests'),
+  jobs: () => request('GET', '/api/diagnostics/jobs'),
+  skills: () => request('GET', '/api/skills'),
+  async probe() {
+    const targets = ['/api/health', '/api/bootstrap', '/api/applications', '/api/samples', '/api/skills'];
+    const out = [];
+    for (const path of targets) {
+      const t = performance.now();
+      try {
+        await request('GET', path);
+        out.push({ path, ok: true, ms: Math.round(performance.now() - t) });
+      } catch (err) {
+        out.push({ path, ok: false, ms: Math.round(performance.now() - t), error: err.code });
+      }
+    }
+    return out;
+  },
+};

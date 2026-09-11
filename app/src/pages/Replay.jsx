@@ -15,7 +15,7 @@
 import { useConsole, useState } from '@/hooks/index.js';
 import { replayApplication, getReplays, amendPolicy, POLICY } from '@/services/api.js';
 import { Card, DecisionPill, Icon, PageHead, Empty, formatClock } from '@/components/ui.jsx';
-import { formatINR, formatPct } from '@core/money.js';
+import { formatINR, formatPct } from '@/lib/format.js';
 
 const TUNABLE = ['P-FOIR-01', 'P-LTV-01', 'P-INC-01', 'P-INC-02', 'P-INC-03', 'P-BAL-01', 'P-BNC-01'];
 

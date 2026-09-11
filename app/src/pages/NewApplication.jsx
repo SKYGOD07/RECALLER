@@ -15,7 +15,7 @@ import { useMemo, useState, navigate } from '@/hooks/index.js';
 import { createApplication, startUnderwriting, POLICY } from '@/services/api.js';
 import { SYNTHETIC_APPLICATIONS } from '@synthetic/applications.js';
 import { Card, Field, Icon, PageHead, Money } from '@/components/ui.jsx';
-import { REQUIRED_DOCS, OPTIONAL_DOCS, DOC_LABELS } from '@core/constants.js';
+import { REQUIRED_DOCS, OPTIONAL_DOCS, DOC_LABELS } from '@/lib/vocab.js';
 import { calculateEMI } from '@credit-engine/index.js';
 
 const BLANK = {

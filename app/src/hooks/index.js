@@ -106,4 +106,30 @@ export function useSticky(key, initial) {
   return [value, set];
 }
 
+/**
+ * Resolve an async value (usually an API call) and keep the last good value
+ * while a new one loads. `debounce` (ms) coalesces rapid changes such as slider drags.
+ */
+export function useAsyncValue(fn, deps, { debounce = 0 } = {}) {
+  const [state, setState] = useState({ value: null, error: null, loading: true });
+  useEffect(() => {
+    let alive = true;
+    setState((s) => ({ ...s, loading: true }));
+    const t = setTimeout(() => {
+      Promise.resolve()
+        .then(fn)
+        .then(
+          (value) => alive && setState({ value, error: null, loading: false }),
+          (error) => alive && setState((s) => ({ ...s, error, loading: false })),
+        );
+    }, debounce);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return state;
+}
+
 export { useMemo, useState, useEffect, useCallback, useRef };

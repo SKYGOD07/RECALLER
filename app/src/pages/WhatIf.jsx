@@ -14,10 +14,10 @@
  * on every move. Nothing on this screen is estimated.
  */
 
-import { useMemo, useState } from '@/hooks/index.js';
+import { useAsyncValue, useState } from '@/hooks/index.js';
 import { solveWhatIf, simulateScenario, POLICY } from '@/services/api.js';
 import { Card, DecisionPill, Icon, Metric, PageHead, Empty, ceilingTone } from '@/components/ui.jsx';
-import { formatINR, formatPct } from '@core/money.js';
+import { formatINR, formatPct } from '@/lib/format.js';
 
 const LEVER_ICON = { LOAN_AMOUNT: 'credit', TENURE: 'audit', CO_APPLICANT: 'assist' };
 
@@ -25,7 +25,8 @@ export default function WhatIf({ application, record }) {
   const segment = POLICY.segments[application.segment];
   const base = record.credit.metrics;
 
-  const solution = useMemo(() => solveWhatIf(application.id, 'APPROVE'), [application.id, record]);
+  // Both run server-side on the deterministic pipeline (POST .../whatif, .../simulate).
+  const { value: solution } = useAsyncValue(() => solveWhatIf(application.id, 'APPROVE'), [application.id, record]);
 
   const [scenario, setScenario] = useState({
     amount: application.loan_amount,
@@ -33,7 +34,9 @@ export default function WhatIf({ application, record }) {
     coApplicantIncome: 0,
   });
 
-  const sim = useMemo(() => simulateScenario(application.id, scenario), [application.id, scenario, record]);
+  const { value: sim } = useAsyncValue(() => simulateScenario(application.id, scenario), [application.id, scenario, record], {
+    debounce: 160,
+  });
 
   const dirty =
     scenario.amount !== application.loan_amount ||

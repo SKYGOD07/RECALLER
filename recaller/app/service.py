@@ -535,6 +535,7 @@ class UnderwritingService:
     # ------------------------------------------------------------------ vocabulary
 
     def bootstrap(self) -> Dict[str, Any]:
+        from ..core.audit import STAGE_LABELS
         from ..core.constants import DECISIONS, ENGINE_VERSION, PROVENANCE, STATUS_LABELS
 
         return {
@@ -551,6 +552,7 @@ class UnderwritingService:
                 "optional_docs": OPTIONAL_DOCS,
                 "provenance": {k: v for k, v in vars(PROVENANCE).items() if not k.startswith("_")},
                 "decisions": list(DECISIONS.ALL),
+                "stage_labels": STAGE_LABELS,
             },
             "limits": {"max_upload_mb": self.settings.max_upload_mb, "accepted_types": ["application/pdf", "text/plain", "image/png", "image/jpeg"]},
             "llm": self.status()["llm"],

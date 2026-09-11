@@ -10,8 +10,8 @@
 import { useSticky } from '@/hooks/index.js';
 import { Card, OutcomePill, PageHead, Icon, CopyButton } from '@/components/ui.jsx';
 import { POLICY } from '@/services/api.js';
-import { formatINR, formatPct } from '@core/money.js';
-import { shortHash } from '@core/hash.js';
+import { formatINR, formatPct } from '@/lib/format.js';
+import { POLICY_HASH } from '@/services/api.js';
 
 export default function PolicyView({ record, application, standalone = false }) {
   const [filter, setFilter] = useSticky('policy.filter', 'all');
@@ -54,7 +54,7 @@ export default function PolicyView({ record, application, standalone = false }) 
         <Tile label="Rules" value={POLICY.rules.length} sub={`${POLICY.rules.filter((r) => r.severity === 'BLOCKING').length} binding`} />
         <Tile
           label={evalResult ? 'Outcome' : 'Policy hash'}
-          value={evalResult ? `${evalResult.summary.passed}/${evalResult.summary.total}` : shortHash(POLICY)}
+          value={evalResult ? `${evalResult.summary.passed}/${evalResult.summary.total}` : POLICY_HASH}
           sub={
             evalResult
               ? `${evalResult.summary.failed} failed · ${evalResult.summary.referred} referred · ${evalResult.summary.not_applicable} n/a`

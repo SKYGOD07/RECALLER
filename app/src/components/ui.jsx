@@ -7,8 +7,8 @@
  * computed in the browser.
  */
 
-import { formatINR, formatPct } from '@core/money.js';
-import { STATUS_LABELS } from '@core/constants.js';
+import { formatINR, formatPct } from '@/lib/format.js';
+import { STATUS_LABELS } from '@/lib/vocab.js';
 
 /* ---------------------------------------------------------------- Icons */
 

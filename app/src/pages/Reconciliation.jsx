@@ -9,7 +9,7 @@
 
 import { useSticky } from '@/hooks/index.js';
 import { Card, FindingPill, PageHead, Empty, Icon } from '@/components/ui.jsx';
-import { formatINR, formatPct } from '@core/money.js';
+import { formatINR, formatPct } from '@/lib/format.js';
 
 const ORDER = { BLOCKING: 0, MISMATCH: 1, ADVISORY: 2, MATCHED: 3 };
 

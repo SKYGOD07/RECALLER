@@ -10,7 +10,7 @@
 import { useConsole, useState, navigate } from '@/hooks/index.js';
 import { getProgress, getDocuments, startUnderwriting, STAGE_PLAN } from '@/services/api.js';
 import { Card, Icon, PageHead, ActorTag, Empty, Money } from '@/components/ui.jsx';
-import { DOC_LABELS } from '@core/constants.js';
+import { DOC_LABELS } from '@/lib/vocab.js';
 
 export default function Processing({ application, record }) {
   useConsole();

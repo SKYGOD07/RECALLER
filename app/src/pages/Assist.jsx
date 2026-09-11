@@ -13,7 +13,7 @@
 import { useConsole, useState, navigate } from '@/hooks/index.js';
 import { resumeUnderwriting, POLICY } from '@/services/api.js';
 import { Card, Confidence, Icon, PageHead, Empty, Money } from '@/components/ui.jsx';
-import { formatINR } from '@core/money.js';
+import { formatINR } from '@/lib/format.js';
 
 export default function Assist({ application, record }) {
   useConsole();

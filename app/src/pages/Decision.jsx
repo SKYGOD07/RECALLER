@@ -20,8 +20,8 @@ import {
   Money,
 } from '@/components/ui.jsx';
 import { POLICY } from '@/services/api.js';
-import { formatINR, formatPct } from '@core/money.js';
-import { PROVENANCE } from '@core/constants.js';
+import { formatINR, formatPct } from '@/lib/format.js';
+import { PROVENANCE } from '@/lib/vocab.js';
 
 const NEXT_STEP = {
   APPROVE: 'Issue the sanction letter and release the invoice to the dealer.',

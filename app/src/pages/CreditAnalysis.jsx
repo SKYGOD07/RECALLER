@@ -11,7 +11,7 @@
 import { useState } from '@/hooks/index.js';
 import { Card, Metric, PageHead, Money, Pct, ceilingTone, floorTone, Icon } from '@/components/ui.jsx';
 import { POLICY } from '@/services/api.js';
-import { formatINR, formatPct } from '@core/money.js';
+import { formatINR, formatPct } from '@/lib/format.js';
 
 export default function CreditAnalysis({ record }) {
   const [showSchedule, setShowSchedule] = useState(false);

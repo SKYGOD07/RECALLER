@@ -11,8 +11,8 @@
 import { useMemo, useState, useSticky } from '@/hooks/index.js';
 import { Card, Confidence, Icon, PageHead, Money, Empty } from '@/components/ui.jsx';
 import { POLICY } from '@/services/api.js';
-import { formatINR } from '@core/money.js';
-import { PROVENANCE } from '@core/constants.js';
+import { formatINR } from '@/lib/format.js';
+import { PROVENANCE } from '@/lib/vocab.js';
 
 const GROUPS = [
   { id: 'applicant', label: 'Applicant & KYC' },
