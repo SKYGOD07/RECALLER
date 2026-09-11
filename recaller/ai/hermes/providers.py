@@ -191,6 +191,233 @@ class AnthropicProvider:
             raise ProviderError(f"Structured output failed: {exc}") from exc
 
 
+class OllamaProvider:
+    """An Ollama server, local or Ollama Cloud.
+
+    Ollama speaks its own chat API rather than the Messages API, so this class
+    owns three translations and nothing else:
+
+      * transcript  → Ollama messages (tool results are their own role)
+      * tool schema → Ollama function schema (``input_schema`` → ``parameters``)
+      * reply       → ``ModelReply`` (synthesising call ids, which Ollama omits)
+
+    Temperature defaults to 0: the model's jobs here are reading fields off a
+    document and restating a decision, and both want the same answer twice.
+    """
+
+    name = "ollama"
+
+    def __init__(
+        self,
+        model: str = DEFAULT_OLLAMA_MODEL,
+        *,
+        host: str = DEFAULT_OLLAMA_HOST,
+        api_key: Optional[str] = None,
+        temperature: float = 0.0,
+        num_ctx: Optional[int] = None,
+        keep_alive: Optional[str] = None,
+        timeout: float = 300.0,
+    ) -> None:
+        self.model = model
+        self.host = str(host).rstrip("/")
+        self.api_key = api_key or None
+        self.temperature = temperature
+        self.num_ctx = num_ctx
+        self.keep_alive = keep_alive
+        self.timeout = timeout
+
+    # -- translation --------------------------------------------------------------
+
+    @staticmethod
+    def to_api_messages(system: str, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Neutral transcript → Ollama messages. The system prompt is message zero."""
+        out: List[Dict[str, Any]] = []
+        if system:
+            out.append({"role": "system", "content": system})
+
+        for m in messages:
+            role = m.get("role")
+            if role == "tool":
+                # Ollama takes each tool result as its own message; tool_name lets
+                # models that were given several calls at once line them up again.
+                out.append(
+                    {
+                        "role": "tool",
+                        "content": str(m.get("content", "")),
+                        "tool_name": m.get("name") or "",
+                    }
+                )
+                continue
+
+            if role == "assistant":
+                msg: Dict[str, Any] = {"role": "assistant", "content": m.get("content", "") or ""}
+                calls = m.get("tool_calls") or []
+                if calls:
+                    msg["tool_calls"] = [
+                        {"function": {"name": c.get("name", ""), "arguments": c.get("arguments") or {}}}
+                        for c in calls
+                    ]
+                out.append(msg)
+                continue
+
+            out.append({"role": "user", "content": m.get("content", "") or ""})
+
+        return out
+
+    @staticmethod
+    def to_api_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Registry definitions (Anthropic ``input_schema`` shape) → Ollama function schema."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.get("name", ""),
+                    "description": t.get("description", ""),
+                    "parameters": t.get("input_schema") or {"type": "object", "properties": {}},
+                },
+            }
+            for t in tools
+        ]
+
+    def _options(self) -> Dict[str, Any]:
+        options: Dict[str, Any] = {"temperature": self.temperature}
+        if self.num_ctx:
+            options["num_ctx"] = self.num_ctx
+        return options
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    async def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(f"{self.host}{path}", json=body, headers=self._headers())
+        except httpx.ConnectError as exc:
+            raise ProviderError(
+                f"Could not reach the Ollama server at {self.host}. Is it running (ollama serve)?",
+                retryable=True,
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise ProviderError(f"Ollama timed out after {self.timeout:.0f}s.", retryable=True) from exc
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"Could not reach Ollama: {exc}", retryable=True) from exc
+
+        if resp.status_code >= 400:
+            raise ProviderError(_ollama_error(resp, self.model, self.host), status=resp.status_code, retryable=resp.status_code >= 500)
+
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            raise ProviderError("Ollama returned a body that is not JSON.") from exc
+        if not isinstance(payload, dict):
+            raise ProviderError("Ollama returned an unexpected body.")
+        return payload
+
+    # -- protocol -----------------------------------------------------------------
+
+    async def complete(self, *, system: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> ModelReply:
+        body: Dict[str, Any] = {
+            "model": self.model,
+            "messages": self.to_api_messages(system, messages),
+            "stream": False,
+            "options": self._options(),
+        }
+        if tools:
+            body["tools"] = self.to_api_tools(tools)
+        if self.keep_alive:
+            body["keep_alive"] = self.keep_alive
+
+        payload = await self._post("/api/chat", body)
+        return self._to_reply(payload)
+
+    @staticmethod
+    def _to_reply(payload: Dict[str, Any]) -> ModelReply:
+        message = payload.get("message") or {}
+        raw_calls = message.get("tool_calls") or []
+
+        calls: List[Dict[str, Any]] = []
+        for i, call in enumerate(raw_calls):
+            fn = call.get("function") or {}
+            name = fn.get("name")
+            if not name:
+                continue
+            calls.append({"id": call.get("id") or f"ollama_{i}", "name": name, "arguments": fn.get("arguments") or {}})
+
+        return ModelReply(
+            content=str(message.get("content") or ""),
+            tool_calls=calls,
+            # The loop only distinguishes "there are tool calls" from "there are not";
+            # done_reason is carried through for anything that wants the detail.
+            stop_reason="tool_use" if calls else (payload.get("done_reason") or "end_turn"),
+            provider_content=message or None,
+            usage={
+                "input_tokens": int(payload.get("prompt_eval_count") or 0),
+                "output_tokens": int(payload.get("eval_count") or 0),
+            },
+        )
+
+    async def structured(self, *, response_model: Type[M], system: str, prompt: str, max_retries: int = 2) -> M:
+        """Ollama constrains generation to a JSON schema, so ask for the schema directly.
+
+        Constrained decoding gets the shape right; it cannot get the content right,
+        so a failed validation is still handed back for a bounded number of retries.
+        """
+        from .structured import validate_reply
+
+        schema = response_model.model_json_schema()
+        messages: List[Dict[str, Any]] = [{"role": "user", "content": prompt}]
+        errors: List[str] = []
+
+        for _ in range(max_retries + 1):
+            body: Dict[str, Any] = {
+                "model": self.model,
+                "messages": self.to_api_messages(system, messages),
+                "stream": False,
+                "format": schema,
+                "options": self._options(),
+            }
+            if self.keep_alive:
+                body["keep_alive"] = self.keep_alive
+
+            reply = self._to_reply(await self._post("/api/chat", body))
+            value, errors = validate_reply(reply.content, response_model)
+            if value is not None:
+                return value
+
+            messages.append({"role": "assistant", "content": reply.content})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "That reply failed validation:\n- "
+                    + "\n- ".join(errors)
+                    + "\nReturn the corrected JSON only.",
+                }
+            )
+
+        raise ProviderError("Structured output failed validation: " + "; ".join(errors))
+
+
+def _ollama_error(resp: Any, model: str, host: str) -> str:
+    """Turn an Ollama error body into something an operator can act on."""
+    try:
+        detail = str((resp.json() or {}).get("error") or "").strip()
+    except ValueError:
+        detail = (resp.text or "").strip()
+
+    if resp.status_code == 404 and "model" in detail.lower():
+        return f'Ollama has no model "{model}". Pull it first: ollama pull {model}'
+    if resp.status_code in (401, 403):
+        return "Ollama rejected the credentials. Check OLLAMA_API_KEY."
+    if resp.status_code == 429:
+        return "Rate limited by Ollama; retry shortly."
+    return f"Ollama error {resp.status_code} from {host}" + (f": {detail}" if detail else ".")
+
+
 class ScriptedProvider:
     """Plays back replies in order. A reply may be a dict, a ``ModelReply`` or ``fn(request) -> reply``."""
 
