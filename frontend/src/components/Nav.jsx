@@ -30,12 +30,7 @@ export default function Nav() {
   return (
     <>
       <header className={`nav${scrolled ? ' is-scrolled' : ''}${open ? ' is-open' : ''}`}>
-        <motion.div
-          className="nav__bar"
-          initial={{ y: -16, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 1.1, ease: EASE, delay: 0.15 }}
-        >
+        <motion.div className="nav__bar">
           <a href="#top" className="nav__brand" aria-label="RECALLER — back to top" onClick={close}>
             <Logo size={24} />
             <span>RECALLER</span>
