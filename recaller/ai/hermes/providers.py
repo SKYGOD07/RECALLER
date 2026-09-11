@@ -489,27 +489,44 @@ async def structured(provider: Any, *, response_model: Type[M], system: str, pro
     return value
 
 
-def _clean(env: Mapping[str, str], key: str) -> str:
-    return (env.get(key) or "").strip()
+def is_cloud_host(host: str) -> bool:
+    return (urlparse(str(host)).hostname or "").endswith("ollama.com")
 
 
-def _number(env: Mapping[str, str], key: str, default: Optional[float] = None) -> Optional[float]:
-    raw = _clean(env, key)
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        return default
+def cloud_model_name(model: str) -> str:
+    """The local daemon's name for a cloud model → the name Ollama Cloud's own API uses."""
+    for suffix in (":cloud", "-cloud"):
+        if model.endswith(suffix):
+            return model[: -len(suffix)]
+    return model
 
 
-def provider_status(env: Mapping[str, str] = os.environ) -> Dict[str, Any]:
-    """What the runtime would use, and why — surfaced by /api/health and the console."""
-    mode = (_clean(env, "RECALLER_LLM_PROVIDER") or "auto").lower()
-    anthropic_creds = bool(_clean(env, "ANTHROPIC_API_KEY") or _clean(env, "ANTHROPIC_AUTH_TOKEN"))
+def parse_think(value: str) -> Union[bool, str, None]:
+    v = (value or "").strip().lower()
+    if not v:
+        return None
+    if v in ("1", "true", "yes", "on"):
+        return True
+    if v in ("0", "false", "no", "off"):
+        return False
+    if v in _THINK_LEVELS:
+        return v
+    raise ConfigError(f"RECALLER_OLLAMA_THINK={value!r} must be true, false, low, medium or high.")
+
+
+def provider_status(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
+    """What the runtime would use, and why — surfaced by /api/health and the console.
+
+    ``env`` defaults to the process environment with ``.env`` applied. Reports
+    whether a key is present, never the key.
+    """
+    mode = raw("RECALLER_LLM_PROVIDER", env).lower()
+    anthropic_creds = is_set("ANTHROPIC_API_KEY", env) or is_set("ANTHROPIC_AUTH_TOKEN", env)
+    ollama_key = is_set("OLLAMA_API_KEY", env)
     # A default host is not evidence of a server, so auto-selection needs someone
     # to have actually named one. RECALLER_LLM_PROVIDER=ollama skips that test.
-    ollama_configured = bool(_clean(env, "OLLAMA_HOST") or _clean(env, "OLLAMA_API_KEY"))
+    ollama_configured = is_set("OLLAMA_HOST", env) or ollama_key
+    warnings: List[str] = []
 
     if mode == "auto":
         provider = "anthropic" if anthropic_creds else ("ollama" if ollama_configured else None)
@@ -517,40 +534,95 @@ def provider_status(env: Mapping[str, str] = os.environ) -> Dict[str, Any]:
         provider = mode
     else:
         provider = None
+        if mode != "none":
+            warnings.append(f"RECALLER_LLM_PROVIDER={mode!r} is not auto, anthropic, ollama or none, so no model is used.")
 
-    default_model = {"anthropic": DEFAULT_ANTHROPIC_MODEL, "ollama": DEFAULT_OLLAMA_MODEL}.get(provider or "")
+    model = None
+    if provider:
+        model = raw("RECALLER_LLM_MODEL", env) or raw(
+            "RECALLER_ANTHROPIC_MODEL" if provider == "anthropic" else "RECALLER_OLLAMA_MODEL", env
+        )
     status: Dict[str, Any] = {
         "mode": mode,
         "provider": provider,
-        "model": (_clean(env, "RECALLER_LLM_MODEL") or default_model) if provider else None,
-        "effort": _clean(env, "RECALLER_LLM_EFFORT") or None,
+        "model": model,
+        "effort": raw("RECALLER_LLM_EFFORT", env) or None,
         # "has what it needs to authenticate" — a local Ollama needs nothing.
         "credentials_detected": anthropic_creds if provider == "anthropic" else (provider == "ollama"),
         "enabled": provider is not None,
     }
     if provider == "ollama":
-        status["host"] = _clean(env, "OLLAMA_HOST") or DEFAULT_OLLAMA_HOST
-        status["api_key_detected"] = bool(_clean(env, "OLLAMA_API_KEY"))
-        status["effort"] = None
+        # A local server needs no key, so a key with no host means Ollama Cloud.
+        if is_set("OLLAMA_HOST", env) or not ollama_key:
+            host = raw("OLLAMA_HOST", env)
+        else:
+            host = raw("RECALLER_OLLAMA_CLOUD_HOST", env)
+        host = host.rstrip("/")
+        cloud = is_cloud_host(host)
+        if cloud:
+            named = cloud_model_name(model or "")
+            if named != model:
+                warnings.append(f'Using "{named}": "{model}" is the local-daemon name; Ollama Cloud\'s API drops the suffix.')
+                model = named
+            if not ollama_key:
+                warnings.append("OLLAMA_API_KEY is not set; Ollama Cloud will reject every request.")
+        status.update(
+            model=model,
+            host=host,
+            cloud=cloud,
+            api_key_detected=ollama_key,
+            credentials_detected=ollama_key or not cloud,
+            think=raw("RECALLER_OLLAMA_THINK", env) or None,
+            effort=None,
+        )
+    status["warnings"] = warnings
     return status
 
 
-def provider_from_env(env: Mapping[str, str] = os.environ) -> Optional[Union[AnthropicProvider, OllamaProvider]]:
+def provider_from_env(env: Optional[Mapping[str, str]] = None) -> Optional[Union[AnthropicProvider, OllamaProvider]]:
     status = provider_status(env)
     provider = status["provider"]
 
     if provider == "anthropic":
-        return AnthropicProvider(model=status["model"], effort=status["effort"])
+        return AnthropicProvider(
+            model=status["model"],
+            effort=status["effort"],
+            max_tokens=get_int("RECALLER_LLM_MAX_TOKENS", env, minimum=1),
+            timeout=get_float("RECALLER_LLM_TIMEOUT", env, minimum=1.0),
+        )
 
     if provider == "ollama":
-        num_ctx = _number(env, "RECALLER_OLLAMA_NUM_CTX")
         return OllamaProvider(
             model=status["model"],
             host=status["host"],
-            api_key=_clean(env, "OLLAMA_API_KEY") or None,
-            temperature=_number(env, "RECALLER_LLM_TEMPERATURE", 0.0) or 0.0,
-            num_ctx=int(num_ctx) if num_ctx else None,
-            keep_alive=_clean(env, "OLLAMA_KEEP_ALIVE") or None,
+            api_key=raw("OLLAMA_API_KEY", env) or None,
+            temperature=get_float("RECALLER_LLM_TEMPERATURE", env, minimum=0.0, maximum=2.0),
+            num_ctx=get_optional_int("RECALLER_OLLAMA_NUM_CTX", env, minimum=1),
+            keep_alive=raw("OLLAMA_KEEP_ALIVE", env) or None,
+            think=parse_think(raw("RECALLER_OLLAMA_THINK", env)),
+            timeout=get_float("RECALLER_LLM_TIMEOUT", env, minimum=1.0),
         )
 
     return None
+
+
+async def check_provider(provider: Any) -> Dict[str, Any]:
+    """One short round trip, so an operator sees a real reply before trusting the agents with a file."""
+    started = time.perf_counter()
+    reply = await provider.complete(
+        system="You are the model behind RECALLER's document agents. This is a connectivity check.",
+        messages=[{"role": "user", "content": "In one short sentence, say that you are ready and name the model you are."}],
+        tools=[],
+    )
+    text = (reply.content or "").strip()
+    return {
+        "ok": bool(text),
+        "provider": getattr(provider, "name", "custom"),
+        "model": getattr(provider, "model", None),
+        "host": getattr(provider, "host", None),
+        "reply": text[:1000],
+        "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+        "usage": reply.usage,
+        "stop_reason": reply.stop_reason,
+        "request_id": reply.request_id,
+    }
