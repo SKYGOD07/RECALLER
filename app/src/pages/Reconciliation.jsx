@@ -83,9 +83,11 @@ function Finding({ finding: f }) {
         <span className="finding__code">{f.code}</span>
         <span className="finding__label">{f.label}</span>
         <FindingPill status={f.status} />
-        {f.severity !== 'INFO' && (
+        {/* Severity is only worth showing when it differs from the status —
+            a MISMATCH graded ADVISORY, for instance. */}
+        {f.severity !== 'INFO' && f.severity !== f.status && (
           <span className="dim mono" style={{ fontSize: 10.5 }}>
-            {f.severity}
+            graded {f.severity.toLowerCase()}
           </span>
         )}
       </div>
