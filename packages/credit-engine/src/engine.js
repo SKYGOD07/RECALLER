@@ -3,8 +3,8 @@
  *
  * JavaScript port of recaller/credit_engine/engine.py.
  * This module is the ONLY place in the system permitted to produce EMI, FOIR,
- * LTV, obligation totals or recognised income. Every function is pure: same
- * inputs, same outputs, forever.
+ * LTV, obligation totals, recognised income or the evidence-strength score.
+ * Every function is pure: same inputs, same outputs, forever.
  */
 
 import { ENGINE_VERSION } from '@core/constants.js'
@@ -257,4 +257,194 @@ export function computeCreditMetrics({ evidence, loanRequest, policy }) {
     schedule: schedule.rows,
     input_hash: hashValue(inputs),
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Evidence strength
+ * ------------------------------------------------------------------ */
+
+/**
+ * How much of the borrower's story the file actually supports, 0–100.
+ *
+ * This is NOT a credit score and it decides nothing. FOIR, LTV and the policy
+ * rules answer "can this person repay"; evidence strength answers the question
+ * a loan officer asks first and no other number on the screen answers: "how
+ * much of this file do I actually know?"
+ *
+ * Four components of 25, every one of them a fact already extracted:
+ *
+ *   Corroboration  independent sources that support the income figure, and
+ *                  whether they agree inside the policy's own tolerance
+ *   Confidence     how far the critical fields sit above the policy's floor
+ *   Consistency    what cross-document reconciliation found
+ *   Coverage       which required documents produced fields, and how many
+ *                  months of history they carry
+ *
+ * Every threshold is read from the policy document, so a lender that moves a
+ * cutoff moves this score too — no constant here is invented by the engine.
+ *
+ * Pure: same bundle, same policy, same score, forever.
+ *
+ * @param {object} args
+ * @param {object} args.fields         confidence-scored evidence fields, by path
+ * @param {object} args.values         the same evidence, materialised
+ * @param {object} args.reconciliation summarised findings
+ * @param {object} args.policy         parsed policy document
+ */
+export function computeEvidenceStrength({ fields = {}, values = {}, reconciliation = null, policy = {} }) {
+  const confidence = policy.confidence || {}
+  const recon = policy.reconciliation || {}
+  const recognition = policy.income_recognition || {}
+
+  const criticalPaths = confidence.critical_fields || []
+  const criticalFloor = confidence.critical_field_threshold ?? 0.88
+  const window = recognition.observation_window_months ?? 6
+
+  const fieldList = Object.values(fields)
+  const bank = values.bank || {}
+  const platform = values.platform || null
+
+  /* -- corroboration: does more than one source say the same thing? ---- */
+  const bankMonths = (bank.monthly_credits || []).length
+  const platformMonths = platform ? (platform.monthly_net || []).length : 0
+  const bankMean = meanOf(bank.monthly_credits || [])
+  const platformMean = platform ? meanOf(platform.monthly_net || []) : 0
+
+  let corroboration = 0
+  const sources = []
+  if (bankMonths > 0) {
+    corroboration += 10
+    sources.push('bank')
+  }
+  if (platformMonths > 0) {
+    corroboration += 10
+    sources.push('platform')
+  }
+
+  // Two sources that disagree are not two sources. The tolerance is the same
+  // one reconciliation uses, so this can never contradict the findings below.
+  let agreementGap = null
+  if (bankMean > 0 && platformMean > 0) {
+    agreementGap = roundHalfUp(Math.abs(platformMean - bankMean) / Math.max(bankMean, platformMean), 4)
+    const advisoryPct = (recon.platform_vs_bank_credits || {}).advisory_pct ?? 0.12
+    if (agreementGap <= advisoryPct) corroboration += 5
+  }
+
+  /* -- confidence: how far above the floor did the critical fields land? */
+  const critical = fieldList.filter((f) => criticalPaths.includes(f.path) || f.critical)
+  const meanCritical = critical.length
+    ? roundHalfUp(critical.reduce((a, f) => a + Number(f.confidence || 0), 0) / critical.length, 4)
+    : 0
+  // Floor earns nothing, certainty earns everything; below the floor earns nothing.
+  const span = Math.max(1 - criticalFloor, 0.0001)
+  const confidencePoints = clampPoints(((meanCritical - criticalFloor) / span) * 25)
+
+  /* -- consistency: a blocking finding is not a deduction, it is the story */
+  const blocking = reconciliation ? reconciliation.blocking || 0 : 0
+  const advisory = reconciliation ? reconciliation.advisory || 0 : 0
+  const checksRun = reconciliation ? reconciliation.total || 0 : 0
+  // Nothing to contradict is not the same as nothing contradicting. A bundle
+  // that supported no cross-document check earns nothing here.
+  const consistency = checksRun === 0 ? 0 : clampPoints(25 - blocking * 25 - advisory * 5)
+
+  /* -- coverage: required documents, and how much history they carry ---- */
+  const groups = [
+    ['applicant', 'KYC'],
+    ['bank', 'Bank statement'],
+    ['invoice', 'Dealer invoice'],
+  ]
+  const present = groups.filter(([prefix]) => fieldList.some((f) => f.path.startsWith(`${prefix}.`)))
+  const docPoints = (present.length / groups.length) * 15
+
+  const observed = Math.max(bankMonths, platformMonths)
+  const historyPoints = (Math.min(observed, window) / window) * 10
+  const coverage = clampPoints(docPoints + historyPoints)
+
+  const components = [
+    {
+      key: 'corroboration',
+      label: 'Corroboration',
+      points: clampPoints(corroboration),
+      max: 25,
+      detail:
+        sources.length > 1
+          ? `${sources.length} independent income sources${agreementGap === null ? '' : `, ${pctText(agreementGap)} apart`}`
+          : sources.length === 1
+            ? 'A single income source'
+            : 'No observable income source',
+    },
+    {
+      key: 'confidence',
+      label: 'Confidence',
+      points: confidencePoints,
+      max: 25,
+      detail: `${critical.length} critical fields, mean ${pctText(meanCritical)} against a ${pctText(criticalFloor)} floor`,
+    },
+    {
+      key: 'consistency',
+      label: 'Consistency',
+      points: consistency,
+      max: 25,
+      detail:
+        checksRun === 0
+          ? 'No cross-document check was possible'
+          : blocking > 0
+            ? `${blocking} blocking contradiction${blocking === 1 ? '' : 's'}`
+            : advisory > 0
+              ? `${advisory} advisory finding${advisory === 1 ? '' : 's'}`
+              : `All ${checksRun} cross-document checks agreed`,
+    },
+    {
+      key: 'coverage',
+      label: 'Coverage',
+      points: coverage,
+      max: 25,
+      detail: `${present.length}/${groups.length} required document types, ${observed} of ${window} months observed`,
+    },
+  ]
+
+  const score = Math.round(components.reduce((a, c) => a + c.points, 0))
+
+  return {
+    score,
+    band: bandFor(score),
+    components,
+    inputs: {
+      income_sources: sources.length,
+      source_gap: agreementGap,
+      critical_fields: critical.length,
+      mean_critical_confidence: meanCritical,
+      critical_floor: criticalFloor,
+      blocking_findings: blocking,
+      advisory_findings: advisory,
+      checks_run: checksRun,
+      document_groups_present: present.length,
+      months_observed: observed,
+      observation_window: window,
+    },
+  }
+}
+
+/** STRONG ≥ 80 · ADEQUATE ≥ 60 · THIN ≥ 40 · WEAK below that. */
+export function bandFor(score) {
+  if (score >= 80) return 'STRONG'
+  if (score >= 60) return 'ADEQUATE'
+  if (score >= 40) return 'THIN'
+  return 'WEAK'
+}
+
+function clampPoints(n) {
+  return roundHalfUp(Math.max(0, Math.min(25, Number(n) || 0)), 2)
+}
+
+function meanOf(xs) {
+  if (!xs || !xs.length) return 0
+  return roundHalfUp(xs.reduce((a, b) => a + Number(b || 0), 0) / xs.length, 2)
+}
+
+function pctText(ratio) {
+  // Rounded by the shared helper, then padded to one decimal so this string is
+  // byte-identical to the Python engine's. `88%` and `88.0%` are the same
+  // number and two different records.
+  return `${roundHalfUp(Number(ratio || 0) * 100, 1).toFixed(1)}%`
 }

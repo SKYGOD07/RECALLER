@@ -10,7 +10,7 @@ import { ACTORS, appendEvent, createLedger } from '@core/audit.js'
 import { APP_STATUS, DECISIONS, ENGINE_VERSION, WORKFLOW_VERSION } from '@core/constants.js'
 import { hashValue, makeId } from '@core/hash.js'
 import { roundHalfUp } from '@core/money.js'
-import { computeCreditMetrics } from '@credit-engine/engine.js'
+import { computeCreditMetrics, computeEvidenceStrength } from '@credit-engine/engine.js'
 import {
   applyConfidenceGate,
   applyOfficerResolutions,
@@ -247,6 +247,9 @@ export async function runUnderwriting({
       status: APP_STATUS.WAITING_FOR_OFFICER,
       assist: { required: true, queue: gate.held, thresholds: gate.thresholds, resolved: [] },
       credit: null, policyEvaluation: null, decision: null, memo: null,
+      // Scored even here — especially here. A held file is exactly the one an
+      // officer needs to know the footing of before they answer anything.
+      evidence_strength: computeEvidenceStrength({ fields, values, reconciliation, policy }),
       audit: box.ledger,
       checkpoint: {
         created_at: clock(),
@@ -294,11 +297,21 @@ async function finalise({ base, values, reconciliation, loanRequest, policy, box
     value: { decision: decVal, reason_codes: rcs },
   }))
 
+  // How much of the file we actually know, scored from the same evidence the
+  // decision was made on. It explains the decision's footing; it never alters it.
+  const evidenceStrength = computeEvidenceStrength({
+    fields: (base.evidence || {}).fields,
+    values,
+    reconciliation,
+    policy,
+  })
+
   const record = {
     ...base,
     status: DECISION_TO_STATUS[decVal] || APP_STATUS.REFERRED,
     assist: { required: false, queue: [], thresholds: gate.thresholds, resolved: resolutions },
     credit, policyEvaluation: policyEval, decision,
+    evidence_strength: evidenceStrength,
     audit: box.ledger,
     generated_at: clock(),
     checkpoint: null,
