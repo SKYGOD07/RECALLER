@@ -1,5 +1,6 @@
 # Isolated source directories
 n8n-master/
+hermes/
 
 # Build and dependencies
 node_modules/
