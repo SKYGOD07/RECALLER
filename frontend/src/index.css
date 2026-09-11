@@ -99,12 +99,6 @@ h1,
 h2,
 h3,
 h4,
-h5,
-h6 {
-  margin: 0;
-  color: #ffffff;
-}
-
 p,
 figure {
   margin: 0;
@@ -206,7 +200,7 @@ main {
 .display-s {
   font-family: var(--display);
   font-weight: 500;
-  color: #ffffff;
+  color: var(--text);
 }
 .display-xl {
   font-size: clamp(2.6rem, 8vw, 9.6rem);
