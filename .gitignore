@@ -1,7 +1,7 @@
 # Isolated source directories and local-only notes (never published)
-n8n-master/
-hermes/
-docs/
+/n8n-master/
+/hermes/
+/docs/
 
 # Build and dependencies
 node_modules/
