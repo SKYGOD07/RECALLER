@@ -130,7 +130,13 @@ def build_router(service: UnderwritingService, request_log: RequestLog, started_
 
     @r.get("/diagnostics/config", tags=["diagnostics"], summary="Effective runtime configuration (no secrets)")
     async def diag_config():
-        return {"settings": service.settings.as_public_dict(), **service.status()}
+        from ..config import effective_config
+
+        return {"settings": service.settings.as_public_dict(), "tunables": effective_config(), **service.status()}
+
+    @r.post("/diagnostics/llm", tags=["diagnostics"], summary="Send the configured model one short prompt and return its reply")
+    async def diag_llm():
+        return await service.check_llm()
 
     # ---------------------------------------------------------------- applications
 
@@ -222,7 +228,7 @@ def build_router(service: UnderwritingService, request_log: RequestLog, started_
 
         async def stream():
             try:
-                yield "retry: 3000\n\n"
+                yield f"retry: {service.settings.sse_retry_ms}\n\n"
                 yield _sse("snapshot", {"status": header.get("status"), "progress": service.progress_for(app_id), "job": running.public() if running else None})
                 if once and running is None:
                     yield _sse("end", {"status": "IDLE", "result_status": header.get("status")})
@@ -231,7 +237,7 @@ def build_router(service: UnderwritingService, request_log: RequestLog, started_
                     if await request.is_disconnected():
                         return
                     try:
-                        event = await asyncio.wait_for(queue.get(), timeout=15)
+                        event = await asyncio.wait_for(queue.get(), timeout=service.settings.sse_keepalive_s)
                     except asyncio.TimeoutError:
                         yield ": keep-alive\n\n"
                         continue

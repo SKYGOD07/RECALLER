@@ -118,7 +118,7 @@ class Database:
     def set_meta(self, key: str, value: str) -> None:
         self._exec("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
 
-    def next_sequence(self, start: int = 500) -> int:
+    def next_sequence(self, start: int) -> int:
         with self._lock:
             n = int(self.get_meta("app_sequence", str(start)) or start) + 1
             self.set_meta("app_sequence", str(n))

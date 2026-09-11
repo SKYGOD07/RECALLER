@@ -19,7 +19,19 @@ export default function System() {
   const [jobs, setJobs] = useState([]);
   const [requests, setRequests] = useState([]);
   const [probe, setProbe] = useState(null);
+  const [modelCheck, setModelCheck] = useState(null);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState(null);
+
+  const checkModel = async () => {
+    setChecking(true);
+    try {
+      setModelCheck({ ok: true, ...(await diagnostics.checkModel()) });
+    } catch (err) {
+      setModelCheck({ ok: false, code: err.code, message: err.message, requestId: err.requestId });
+    }
+    setChecking(false);
+  };
   const [live, setLive] = useState(true);
   const [, tick] = useState(0);
 
@@ -108,6 +120,72 @@ export default function System() {
         <Stat label="Jobs running" value={health?.jobs?.running ?? '—'} sub={health ? `${health.jobs.subscribers} stream(s) open` : ''} testid="stat-jobs" />
       </div>
 
+      <Card title="Model connection" eyebrow="POST /api/diagnostics/llm" style={{ marginBottom: 16 }}>
+        {health?.llm?.enabled ? (
+          <table className="kv">
+            <tbody>
+              <tr>
+                <td>provider</td>
+                <td className="mono">{health.llm.provider}</td>
+              </tr>
+              <tr>
+                <td>model</td>
+                <td className="mono">{health.llm.model}</td>
+              </tr>
+              {health.llm.host && (
+                <tr>
+                  <td>host</td>
+                  <td className="mono">
+                    {health.llm.host}
+                    {health.llm.cloud ? ' · cloud' : ''}
+                  </td>
+                </tr>
+              )}
+              {'api_key_detected' in health.llm && (
+                <tr>
+                  <td>api key</td>
+                  <td className="mono">{health.llm.api_key_detected ? 'detected' : 'not set'}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <div className="sub" style={{ fontSize: 12 }}>
+            No model configured. Put the model settings in <span className="mono">.env</span> at the repository root (see{' '}
+            <span className="mono">.env.example</span>) and restart the backend.
+          </div>
+        )}
+        {(health?.llm?.warnings ?? []).map((w) => (
+          <div key={w} role="status" style={{ color: 'var(--red)', fontSize: 12, marginTop: 6 }}>
+            {w}
+          </div>
+        ))}
+        <div className="divider" />
+        <button
+          type="button"
+          className="btn btn--sm"
+          disabled={!health?.llm?.enabled || checking}
+          onClick={checkModel}
+          data-testid="check-model"
+        >
+          {checking ? 'Waiting for the model…' : 'Send test prompt'}
+        </button>
+        {modelCheck &&
+          (modelCheck.ok ? (
+            <div style={{ marginTop: 10 }} data-testid="model-reply">
+              <div className="mono dim" style={{ fontSize: 11 }}>
+                {modelCheck.provider} · {modelCheck.model} · {modelCheck.latency_ms} ms · {modelCheck.usage?.output_tokens ?? 0} tokens out
+              </div>
+              <div style={{ marginTop: 6, fontSize: 13 }}>{modelCheck.reply || '(empty reply)'}</div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 10, fontSize: 12 }} data-testid="model-error">
+              <b style={{ color: 'var(--red)' }}>{modelCheck.code}</b> {modelCheck.message}
+              {modelCheck.requestId && <span className="mono dim"> · {modelCheck.requestId}</span>}
+            </div>
+          ))}
+      </Card>
+
       <div className="grid grid--2" style={{ marginBottom: 16 }}>
         <Card title="Configuration" eyebrow="No secrets">
           {config ? (
@@ -131,6 +209,16 @@ export default function System() {
                   <td>llm mode</td>
                   <td className="mono">{config.llm?.mode ?? '—'}</td>
                 </tr>
+                {Object.entries(config.tunables ?? {}).map(([k, t]) => (
+                  <tr key={k}>
+                    <td className="mono" style={{ fontSize: 11 }}>
+                      {k}
+                    </td>
+                    <td className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>
+                      {t.value || '—'} <span className="dim">· {t.source}</span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           ) : (

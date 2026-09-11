@@ -23,9 +23,11 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from ...config import DEFAULTS, get_int
 from .registry import ToolRegistry, tool_error
 
-DEFAULT_MAX_ITERATIONS = 12
+# Shipped default; RECALLER_AGENT_MAX_ITERATIONS overrides it at run time.
+DEFAULT_MAX_ITERATIONS = int(DEFAULTS["RECALLER_AGENT_MAX_ITERATIONS"])
 
 
 @dataclass
@@ -45,10 +47,11 @@ async def run_agent(
     tool_names: List[str],
     system: str = "",
     messages: Optional[List[Dict[str, Any]]] = None,
-    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    max_iterations: Optional[int] = None,
     context: Optional[Dict[str, Any]] = None,
     on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> AgentRun:
+    max_iterations = max_iterations or get_int("RECALLER_AGENT_MAX_ITERATIONS", minimum=1)
     allowed = [n for n in tool_names if registry.has(n)]
     tools = registry.definitions(allowed)
     transcript: List[Dict[str, Any]] = list(messages or [])

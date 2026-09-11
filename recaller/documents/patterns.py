@@ -13,12 +13,16 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from ..config import get_float
 from ..core.constants import PROVENANCE
 from ..extraction.schema import EVIDENCE_SPEC, field
 from .normalise import number_list, parse_date, parse_number
 
-EXACT_CONFIDENCE = 0.93
-LONG_TEXT_CONFIDENCE = 0.90
+
+def _confidence(long_text: bool = False) -> float:
+    """Confidence for a value read verbatim off a labelled line (RECALLER_PATTERN_*_CONFIDENCE)."""
+    key = "RECALLER_PATTERN_LONG_TEXT_CONFIDENCE" if long_text else "RECALLER_PATTERN_CONFIDENCE"
+    return get_float(key, minimum=0.0, maximum=1.0)
 
 LABELS: Dict[str, List[str]] = {
     "applicant.name": [r"name", r"applicant name", r"full name"],
@@ -136,7 +140,7 @@ def extract_patterns(document: Dict[str, Any], segments: Optional[Dict[str, Any]
                     break
             if hit:
                 value, line = hit
-                conf = LONG_TEXT_CONFIDENCE if spec["type"] == "text" and len(str(value)) > 40 else EXACT_CONFIDENCE
+                conf = _confidence(long_text=spec["type"] == "text" and len(str(value)) > 40)
                 out[spec["path"]] = field(spec["path"], value, confidence=conf, provenance=PROVENANCE.EXTRACTED, citation=cite(page_no, line), raw=line.strip())
                 break
 
@@ -160,7 +164,7 @@ def extract_patterns(document: Dict[str, Any], segments: Optional[Dict[str, Any]
                     )
         if first:
             out["bank.recurring_debits"] = field(
-                "bank.recurring_debits", debits, confidence=EXACT_CONFIDENCE, provenance=PROVENANCE.EXTRACTED,
+                "bank.recurring_debits", debits, confidence=_confidence(), provenance=PROVENANCE.EXTRACTED,
                 citation=cite(*first), raw=first[1].strip(),
             )
     return out

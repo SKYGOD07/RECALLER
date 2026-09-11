@@ -471,6 +471,7 @@ export const diagnostics = {
   clearRequests: () => request('DELETE', '/api/diagnostics/requests'),
   jobs: () => request('GET', '/api/diagnostics/jobs'),
   skills: () => request('GET', '/api/skills'),
+  checkModel: () => request('POST', '/api/diagnostics/llm'),
   async probe() {
     const targets = ['/api/health', '/api/bootstrap', '/api/applications', '/api/samples', '/api/skills'];
     const out = [];

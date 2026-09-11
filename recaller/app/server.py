@@ -45,8 +45,8 @@ def create_app(settings: Optional[Settings] = None, provider: Any = _UNSET) -> F
     settings = settings or get_settings()
     policy = json.loads(settings.policy_path.read_text(encoding="utf-8"))
     db = Database(settings.db_path)
-    jobs = JobManager()
-    request_log = RequestLog()
+    jobs = JobManager(history=settings.job_history)
+    request_log = RequestLog(size=settings.request_log_size)
     service = UnderwritingService(settings, db, jobs, policy, provider=provider_from_env() if provider is _UNSET else provider)
     started_at = time.time()
 
@@ -69,7 +69,7 @@ def create_app(settings: Optional[Settings] = None, provider: Any = _UNSET) -> F
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:5180", "http://localhost:5180", *settings.cors_origins],
+        allow_origins=settings.cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
         expose_headers=["X-Request-ID", "Server-Timing", "X-Response-Time", "X-Error-Code"],
