@@ -1,6 +1,8 @@
 /**
  * HTTP transport — the RECALLER FastAPI backend.
  *
+ *   bootstrap          → GET  /api/bootstrap        (policy, stage plan, queue, vocab)
+ *   health             → GET  /api/health
  *   listApplications   → GET  /api/applications
  *   getApplication     → GET  /api/applications/:id
  *   startUnderwriting  → POST /api/applications/:id/underwrite
@@ -8,20 +10,22 @@
  *   replayApplication  → POST /api/applications/:id/replay
  *   solveWhatIf        → POST /api/applications/:id/whatif
  *   simulateScenario   → POST /api/applications/:id/simulate
+ *   verifyAudit        → GET  /api/applications/:id/audit/verify
  *   resetConsole       → POST /api/reset
  *
- * The server paces the pipeline and answers once with the finished record, so
- * stage progress is read from the application's `progress` map while the
- * request is in flight rather than streamed.
+ * A run POSTs synchronously and answers with the finished record; while it is
+ * in flight the server streams stage transitions over Server-Sent Events at
+ * /applications/:id/events, which is where the progress view gets its truth.
  */
 
 import { url } from './config.js'
 
 class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, code) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
 }
 
@@ -39,47 +43,49 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   }
   if (!res.ok) {
     const detail = await res.json().catch(() => null)
-    throw new ApiError(detail?.detail ?? `${method} ${path} failed (${res.status})`, res.status)
+    const message =
+      detail?.detail?.message ?? detail?.message ?? detail?.detail ?? `${method} ${path} failed (${res.status})`
+    throw new ApiError(typeof message === 'string' ? message : JSON.stringify(message), res.status, detail?.code)
   }
   return res.status === 204 ? null : res.json()
 }
 
-const POLL_MS = 350
-
 /**
- * Reports stage transitions to `onStage` by polling the application's progress
- * map until `work` settles. Progress is the backend's own view of the run.
+ * Subscribe to a run while `work` is in flight.
+ *
+ * The stream carries `snapshot`, `stage` and `end` events; only stage
+ * transitions matter to the progress view. The subscription is torn down in a
+ * `finally` so a failed run cannot leave a stream open.
  */
-async function withProgress(id, onStage, work) {
-  if (!onStage) return work()
-  let live = true
-  let seen = {}
+async function withStream(id, onStage, work) {
+  if (!onStage || typeof EventSource === 'undefined') return work()
 
-  const poll = async () => {
-    while (live) {
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, POLL_MS))
-      if (!live) break
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const snap = await request(`/api/applications/${id}`)
-        const progress = snap?.progress ?? {}
-        Object.entries(progress).forEach(([stageId, status]) => {
-          if (seen[stageId] !== status) onStage({ id: stageId, status })
-        })
-        seen = { ...progress }
-      } catch {
-        /* a dropped poll must never fail the run it is only narrating */
-      }
+  const source = new EventSource(url(`/api/applications/${id}/events?once=true`))
+
+  const apply = (payload) => {
+    const progress = payload?.progress
+    if (progress) {
+      Object.entries(progress).forEach(([stageId, status]) => onStage({ id: stageId, status }))
+    } else if (payload?.id) {
+      onStage({ id: payload.id, status: payload.status })
     }
   }
 
-  const polling = poll()
+  const read = (event) => {
+    try {
+      apply(JSON.parse(event.data))
+    } catch {
+      /* a malformed frame must never fail the run it is only narrating */
+    }
+  }
+
+  source.addEventListener('snapshot', read)
+  source.addEventListener('stage', read)
+
   try {
     return await work()
   } finally {
-    live = false
-    await polling
+    source.close()
   }
 }
 
@@ -88,18 +94,19 @@ export function createHttpTransport() {
     name: 'http',
 
     health: () => request('/api/health'),
+    bootstrap: () => request('/api/bootstrap'),
     getPolicy: () => request('/api/policy'),
     getStagePlan: () => request('/api/stage-plan'),
     listApplications: () => request('/api/applications'),
     getApplication: (id) => request(`/api/applications/${id}`),
 
     startUnderwriting: (id, { paced = true, onStage } = {}) =>
-      withProgress(id, onStage, () =>
+      withStream(id, onStage, () =>
         request(`/api/applications/${id}/underwrite`, { method: 'POST', body: { paced } }),
       ),
 
     resumeUnderwriting: (id, resolutions, { paced = true, onStage } = {}) =>
-      withProgress(id, onStage, () =>
+      withStream(id, onStage, () =>
         request(`/api/applications/${id}/resume`, { method: 'POST', body: { resolutions, paced } }),
       ),
 
@@ -114,6 +121,8 @@ export function createHttpTransport() {
 
     simulateScenario: (id, scenario) =>
       request(`/api/applications/${id}/simulate`, { method: 'POST', body: { scenario } }),
+
+    verifyAudit: (id) => request(`/api/applications/${id}/audit/verify`),
 
     resetConsole: () => request('/api/reset', { method: 'POST' }),
   }
