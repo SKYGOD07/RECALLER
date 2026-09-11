@@ -29,6 +29,9 @@
   position: absolute;
   inset: 0;
   display: block;
+}
+/* Only the layers that actually move get promoted. */
+.hero__layer[data-depth] {
   will-change: transform;
 }
 
@@ -53,7 +56,7 @@
     radial-gradient(58% 30% at 18% 74%, #171b2a 0 42%, transparent 43%),
     radial-gradient(46% 24% at 46% 78%, #141826 0 44%, transparent 45%),
     radial-gradient(64% 28% at 86% 76%, #161a28 0 42%, transparent 43%);
-  filter: blur(14px);
+  filter: blur(12px);
   opacity: 0.9;
 }
 
@@ -61,7 +64,7 @@
 .hero__layer--haze {
   top: 52%;
   background: linear-gradient(180deg, transparent, rgba(146, 158, 200, 0.14) 38%, transparent);
-  filter: blur(26px);
+  filter: blur(18px);
 }
 
 /* near ridge — darker, sharper, reads as the foreground horizon */
