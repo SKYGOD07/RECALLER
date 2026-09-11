@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring } from 'framer-motion'
 import { EASE } from '../animations/motion'
 import { NAV_LINKS } from '../data/site'
+import { Link } from '../lib/router'
 import { Button, Logo } from './ui'
 import './nav.css'
 
@@ -48,10 +49,10 @@ export default function Nav() {
             ))}
           </nav>
 
-          <a href="#download" className="nav__cta">
+          <Link to="/console" className="nav__cta" onClick={close}>
             <span className="dot-live" />
-            Download
-          </a>
+            Open console
+          </Link>
 
           <button
             type="button"
@@ -108,8 +109,8 @@ export default function Nav() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35, duration: 0.8, ease: EASE }}
             >
-              <Button href="#download" icon="download" onClick={close}>
-                Download RECALLER
+              <Button to="/console" onClick={close}>
+                Open console
               </Button>
               <p className="caps t3">AI credit intelligence · Build 0.1</p>
             </motion.div>

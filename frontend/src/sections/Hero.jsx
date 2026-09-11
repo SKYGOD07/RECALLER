@@ -64,9 +64,9 @@ export default function Hero() {
               they do have, and returns a decision that is fast and defensible.
             </motion.p>
             <motion.div className="hero__ctas" {...intro(1.05)}>
-              <Button href="#problem">Explore RECALLER</Button>
-              <Button href="#download" variant="ghost" icon="download">
-                Download RECALLER
+              <Button to="/console">Open console</Button>
+              <Button href="#problem" variant="ghost">
+                See how RECALLER works
               </Button>
             </motion.div>
           </div>

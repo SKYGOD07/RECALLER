@@ -1,51 +1,49 @@
-import { MotionConfig } from 'framer-motion'
-import Nav from './components/Nav.jsx'
-import Hero from './sections/Hero.jsx'
-import Problem from './sections/Problem.jsx'
-import Idea from './sections/Idea.jsx'
-import Agents from './sections/Agents.jsx'
-import Trust from './sections/Trust.jsx'
-import Reconciliation from './sections/Reconciliation.jsx'
-import HumanLoop from './sections/HumanLoop.jsx'
-import Policy from './sections/Policy.jsx'
-import Decision from './sections/Decision.jsx'
-import Audit from './sections/Audit.jsx'
-import WhatIf from './sections/WhatIf.jsx'
-import Showcase from './sections/Showcase.jsx'
-import Orchestration from './sections/Orchestration.jsx'
-import Download from './sections/Download.jsx'
-import Footer from './sections/Footer.jsx'
+import { useEffect } from 'react'
+import ConsoleShell from '@/components/layout/ConsoleShell.jsx'
+import { useBootedConsole } from '@/hooks/console'
+import { RouterProvider, useRoute } from '@/lib/router'
+import ApplicationPage from '@/pages/ApplicationPage.jsx'
+import ConsolePage from '@/pages/ConsolePage.jsx'
+import LandingPage from '@/pages/LandingPage.jsx'
+import { selectApplication } from '@/store/console'
+import '@/styles/console.css'
+
+function Console({ route }) {
+  const state = useBootedConsole()
+  const application = route.id ? selectApplication(state, route.id) : null
+
+  useEffect(() => {
+    document.title = application
+      ? `${application.id} · ${application.borrower_name} — RECALLER`
+      : 'RECALLER Console'
+  }, [application])
+
+  return (
+    <ConsoleShell state={state} application={application}>
+      {route.view === 'application' ? (
+        <ApplicationPage id={route.id} tab={route.tab} />
+      ) : (
+        <ConsolePage />
+      )}
+    </ConsoleShell>
+  )
+}
+
+function Routes() {
+  const { route } = useRoute()
+
+  useEffect(() => {
+    document.body.dataset.mode = route.view === 'landing' ? 'landing' : 'console'
+  }, [route.view])
+
+  if (route.view === 'landing') return <LandingPage />
+  return <Console route={route} />
+}
 
 export default function App() {
   return (
-    <MotionConfig reducedMotion="user">
-      <a className="skip-link" href="#problem">
-        Skip to content
-      </a>
-      <div className="guides" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
-      <Nav />
-      <main>
-        <Hero />
-        <Problem />
-        <Idea />
-        <Agents />
-        <Trust />
-        <Reconciliation />
-        <HumanLoop />
-        <Policy />
-        <Decision />
-        <Audit />
-        <WhatIf />
-        <Showcase />
-        <Orchestration />
-        <Download />
-      </main>
-      <Footer />
-    </MotionConfig>
+    <RouterProvider>
+      <Routes />
+    </RouterProvider>
   )
 }
