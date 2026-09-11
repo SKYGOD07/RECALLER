@@ -1,3 +1,5 @@
+import { Link } from '../lib/router'
+
 export function SectionLabel({ index, children }) {
   return (
     <div className="label">
@@ -17,17 +19,29 @@ export function Status({ kind = 'neutral', pulse = false, children }) {
   )
 }
 
-export function Button({ href, children, variant = 'primary', icon = 'arrow', size, className = '', ...rest }) {
-  return (
-    <a
-      href={href}
-      className={`btn btn--${variant}${size ? ` btn--${size}` : ''} ${className}`}
-      {...rest}
-    >
+export function Button({ href, to, children, variant = 'primary', icon = 'arrow', size, className = '', ...rest }) {
+  const cls = `btn btn--${variant}${size ? ` btn--${size}` : ''} ${className}`
+  const inner = (
+    <>
       <span className="btn__label">{children}</span>
       <span className={`btn__icon btn__icon--${icon}`} aria-hidden="true">
         {icon === 'download' ? <IconDownload /> : <IconArrow />}
       </span>
+    </>
+  )
+
+  // `to` routes in-app (landing → console); `href` stays an ordinary link.
+  if (to) {
+    return (
+      <Link to={to} className={cls} {...rest}>
+        {inner}
+      </Link>
+    )
+  }
+
+  return (
+    <a href={href} className={cls} {...rest}>
+      {inner}
     </a>
   )
 }
