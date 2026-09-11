@@ -1977,6 +1977,7 @@ body[data-mode='console'] .guides {
 .fprint__main {
   display: grid;
   gap: 8px;
+  justify-items: start;
 }
 .fprint__hash {
   font-size: clamp(20px, 2.4vw, 30px);
