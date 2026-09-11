@@ -2,15 +2,35 @@
 
 ``AnthropicProvider`` calls the Claude Messages API through the official
 ``anthropic`` SDK, using a manual tool loop (see ``loop.py``) and Instructor for
-structured output. ``ScriptedProvider`` plays back fixed replies, so tests and
-offline demos run without a network or a key.
+structured output. ``OllamaProvider`` calls an Ollama server — local by
+default, or Ollama Cloud with a key — over its ``/api/chat`` endpoint, and uses
+Ollama's JSON-schema ``format`` for structured output. ``ScriptedProvider``
+plays back fixed replies, so tests and offline demos run without a network or a
+key.
+
+All three satisfy the same small protocol, which is all the loop needs:
+
+    name, model
+    async complete(*, system, messages, tools) -> ModelReply
+    async structured(*, response_model, system, prompt, max_retries) -> BaseModel   [optional]
 
 Selection (``provider_from_env``):
-  RECALLER_LLM_PROVIDER=auto        Anthropic if ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN is set, else none
+  RECALLER_LLM_PROVIDER=auto        Anthropic if ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN is set,
+                                    else Ollama if OLLAMA_HOST / OLLAMA_API_KEY is set, else none
   RECALLER_LLM_PROVIDER=anthropic   always Anthropic (also works with an `ant auth login` profile)
+  RECALLER_LLM_PROVIDER=ollama      always Ollama
   RECALLER_LLM_PROVIDER=none        no model; RECALLER runs fully deterministic
-  RECALLER_LLM_MODEL                default claude-opus-5
-  RECALLER_LLM_EFFORT               optional low | medium | high | xhigh | max
+  RECALLER_LLM_MODEL                default claude-opus-5 (Anthropic) / llama3.1 (Ollama)
+  RECALLER_LLM_EFFORT               Anthropic only: low | medium | high | xhigh | max
+  RECALLER_LLM_TEMPERATURE          Ollama only, default 0 — underwriting wants repeatable reads
+
+  OLLAMA_HOST                       default http://127.0.0.1:11434; use https://ollama.com for Cloud
+  OLLAMA_API_KEY                    Ollama Cloud key. A local server needs none.
+
+Whichever provider is configured, it only ever reads documents and explains a
+finished decision. No provider is reachable from the credit engine, the policy
+engine or the what-if solver, and the tool registry refuses any tool that would
+decide or compute a credit outcome.
 """
 
 from __future__ import annotations
@@ -24,6 +44,8 @@ from pydantic import BaseModel
 from .structured import generate_structured
 
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-5"
+DEFAULT_OLLAMA_MODEL = "llama3.1"
+DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 M = TypeVar("M", bound=BaseModel)
