@@ -91,3 +91,9 @@ def create_app(settings: Optional[Settings] = None, provider: Any = _UNSET) -> F
             return FileResponse(dist / "index.html")
 
     return app
+
+
+def __getattr__(name: str) -> Any:
+    if name == "app":
+        return create_app()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
