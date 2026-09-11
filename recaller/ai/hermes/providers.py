@@ -76,6 +76,7 @@ class ModelReply:
     provider_content: Any = None
     usage: Dict[str, int] = field(default_factory=dict)
     request_id: Optional[str] = None
+    thinking: str = ""  # a reasoning model's own reasoning, kept apart from the answer
 
 
 class ProviderError(RuntimeError):
@@ -374,10 +375,13 @@ class OllamaProvider:
 
         # Reasoning models return their thinking in message.thinking; older builds
         # inline it as <think>…</think>. Either way it is not the answer.
-        content = _THINK_BLOCK.sub("", str(message.get("content") or "")).strip()
+        raw_content = str(message.get("content") or "")
+        inline = "\n".join(m.strip() for m in re.findall(r"<think>([\s\S]*?)</think>", raw_content, re.I))
+        content = _THINK_BLOCK.sub("", raw_content).strip()
         return ModelReply(
             content=content,
             tool_calls=calls,
+            thinking=str(message.get("thinking") or inline or "").strip(),
             # The loop only distinguishes "there are tool calls" from "there are not";
             # done_reason is carried through for anything that wants the detail.
             stop_reason="tool_use" if calls else (payload.get("done_reason") or "end_turn"),

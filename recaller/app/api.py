@@ -69,6 +69,16 @@ class SimulateBody(BaseModel):
     scenario: Dict[str, Any]
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=20000)
+
+
+class AskBody(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    history: List[ChatTurn] = Field(default_factory=list, max_length=40)
+
+
 def _sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str, ensure_ascii=False)}\n\n"
 
@@ -267,6 +277,11 @@ def build_router(service: UnderwritingService, request_log: RequestLog, started_
         return service.verify_audit(app_id)
 
     # ---------------------------------------------------------------- agents
+
+    # Registered before /agent/{kind}, which would otherwise claim "ask".
+    @r.post("/applications/{app_id}/agent/ask", tags=["agents"], summary="Ask the model about this file (read-only tools, credit-underwriter skill)")
+    async def agent_ask(app_id: str, body: AskBody):
+        return await service.ask(app_id, body.question, [t.model_dump() for t in body.history])
 
     @r.post("/applications/{app_id}/agent/{kind}", tags=["agents"], status_code=202, summary="Start a review or explain run (needs a model)")
     async def agent_run(app_id: str, kind: Literal["review", "explain"]):

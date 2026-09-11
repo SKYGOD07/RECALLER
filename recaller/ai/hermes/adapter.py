@@ -21,6 +21,12 @@ Three ways RECALLER uses agents, each behind a hard boundary:
     A plain-language explanation for the officer (Instructor). Every number and
     reason code it states must already exist in the record, or it is discarded
     and the deterministic headline stands.
+
+``ask_about_file``
+    The officer asks, the model answers: a tool loop over every read-only view
+    of the record, with the credit-underwriter skill. The answer is returned
+    with the model's reasoning, the tools it used, and any figure it stated
+    that the record does not contain.
 """
 
 from __future__ import annotations
@@ -38,7 +44,7 @@ from .registry import ToolRegistry
 from .schemas import ChildReview, DecisionExplanation, ReviewSynthesis
 from .skills import load_skill, skill_prompt
 from .tools import build_review_registry, evidence_slice
-from .toolsets import resolve_toolset
+from .toolsets import resolve_toolset, resolve_toolsets
 
 
 def _underwriter_prompt(references: Optional[List[str]] = None) -> str:
@@ -357,3 +363,62 @@ async def explain_decision(provider: Any, record: Dict[str, Any]) -> Dict[str, A
             "rejected_reason": f"model output cited figures or codes not in the record: {bad_numbers or ''} {bad_codes or ''}".strip(),
         }
     return {"explanation": exp.model_dump(), "source": "model"}
+
+
+# ---------------------------------------------------------------------------
+# Conversation — the officer asks, the model answers from the record
+# ---------------------------------------------------------------------------
+
+ASK_TOOLSETS = ["review", "narration"]
+ASK_HISTORY_TURNS = 12  # earlier exchanges kept in context
+
+
+async def ask_about_file(
+    provider: Any, record: Dict[str, Any], question: str, history: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    question = str(question or "").strip()
+    if not question:
+        raise ValueError("Ask a question.")
+    sink: List[Dict[str, Any]] = []
+    registry = build_review_registry(record, sink)
+    app = record.get("application") or {}
+    decision = (record.get("decision") or {}).get("decision")
+    system = "\n\n".join(
+        [
+            _underwriter_prompt(["evidence-rules", "reason-codes", "reconciliation-rules"]),
+            "You are RECALLER's credit analyst, answering the loan officer's questions about one file. Read the "
+            "evidence, reconciliation, credit engine output, policy result and memo with your tools before answering. "
+            "Quote figures exactly as the tools return them; never compute, estimate or round a new figure. Say where "
+            "each fact comes from (field path, document and page, rule code, or memo section). The verdict belongs to "
+            "the policy engine" + (f" (here: {decision})" if decision else "; this file has none yet") + ". You explain "
+            "it and may record concerns with flag_issue, but you cannot change it. If the record does not hold the "
+            "answer, say so plainly.",
+            f"File {app.get('id')} · {app.get('borrower_name')} · {app.get('segment')} · status {record.get('status')}.",
+        ]
+    )
+    turns = [
+        {"role": t["role"], "content": str(t.get("content") or "")}
+        for t in (history or [])
+        if t.get("role") in ("user", "assistant") and str(t.get("content") or "").strip()
+    ][-2 * ASK_HISTORY_TURNS :]
+    run = await run_agent(
+        provider=provider,
+        registry=registry,
+        tool_names=resolve_toolsets(ASK_TOOLSETS),
+        system=system,
+        messages=[*turns, {"role": "user", "content": question}],
+    )
+    answer = run.content.strip()
+    bad = unsupported_numbers(answer, allowed_numbers(record))
+    return {
+        "question": question,
+        "answer": answer or "(the model returned no answer)",
+        "reasoning": "\n\n".join(run.reasoning)[:20000],
+        "grounded": not bad,
+        "unsupported_numbers": bad,
+        "findings": sink,
+        "tool_calls": [{"name": c["name"], "arguments": c["arguments"], "is_error": c["is_error"]} for c in run.tool_calls],
+        "iterations": run.iterations,
+        "exit_reason": run.exit_reason,
+        "usage": run.usage,
+    }
