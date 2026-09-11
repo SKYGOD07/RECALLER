@@ -1,6 +1,7 @@
 """RECALLER — narration and credit memo generation."""
 
 from datetime import datetime
+import inspect
 import re
 from typing import Any, Callable, Dict, List, Optional
 from ..core.constants import DECISIONS, FINDING_STATUS

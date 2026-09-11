@@ -1,8 +1,9 @@
 """RECALLER — extraction layer adapters and confidence gating."""
 
 from datetime import datetime
+import inspect
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from ..core.constants import DOC_TYPES, PROVENANCE
 from ..core.hash import hash_value, rng
 from .schema import EVIDENCE_SPEC, SPEC_BY_PATH, field, get_path, to_values
