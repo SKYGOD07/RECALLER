@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
-import { EASE } from '../animations/motion'
+import { EASE, lerpRange } from '../animations/motion'
 import { RevealLines } from '../components/Reveal'
 import { Button } from '../components/ui'
 import HeroStage from './HeroStage'
@@ -16,7 +16,7 @@ export default function Hero() {
   const ref = useRef(null)
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end start'] })
   const y = useTransform(scrollYProgress, [0, 0.5], ['0%', '-12%'])
-  const opacity = useTransform(scrollYProgress, [0, 0.36], [1, 0])
+  const opacity = useTransform(scrollYProgress, lerpRange(0, 0.36, 1, 0))
 
   return (
     <section id="top" className="hero" ref={ref}>

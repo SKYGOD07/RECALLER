@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
+import { lerpRange } from '../animations/motion'
 import { SectionLabel } from '../components/ui'
 import './idea.css'
 
@@ -55,8 +56,8 @@ export default function Idea() {
 }
 
 function Phrase({ p, i, verb, rest }) {
-  const opacity = useTransform(p, [AT[i], AT[i] + SPAN], [0.12, 1])
-  const x = useTransform(p, [AT[i], AT[i] + SPAN], [-18, 0])
+  const opacity = useTransform(p, lerpRange(AT[i], AT[i] + SPAN, 0.12, 1))
+  const x = useTransform(p, lerpRange(AT[i], AT[i] + SPAN, -18, 0))
   return (
     <motion.span className="idea__line" style={{ opacity, x }}>
       <span className="idea__num">0{i + 1}</span>
@@ -68,17 +69,17 @@ function Phrase({ p, i, verb, rest }) {
 }
 
 function useLit(p, at) {
-  return useTransform(p, [at, at + SPAN], [0.22, 1])
+  return useTransform(p, lerpRange(at, at + SPAN, 0.22, 1))
 }
 
 function Convergence({ p }) {
   const srcLit = useLit(p, AT[0])
-  const wires = useTransform(p, [AT[1] - 0.03, AT[1] + SPAN + 0.03], [0, 1])
+  const wires = useTransform(p, lerpRange(AT[1] - 0.03, AT[1] + SPAN + 0.03, 0, 1))
   const evLit = useLit(p, AT[1] + 0.06)
-  const chips = useTransform(p, [AT[2], AT[2] + SPAN], [0, 1])
-  const decWire = useTransform(p, [AT[3] - 0.02, AT[3] + 0.04], [0, 1])
+  const chips = useTransform(p, lerpRange(AT[2], AT[2] + SPAN, 0, 1))
+  const decWire = useTransform(p, lerpRange(AT[3] - 0.02, AT[3] + 0.04, 0, 1))
   const decLit = useLit(p, AT[3] + 0.03)
-  const caption = useTransform(p, [AT[3] + 0.06, AT[3] + 0.13], [0, 1])
+  const caption = useTransform(p, lerpRange(AT[3] + 0.06, AT[3] + 0.13, 0, 1))
 
   return (
     <div className="convergence" aria-hidden="true">

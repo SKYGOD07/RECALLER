@@ -1,0 +1,209 @@
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.dec {
+  position: relative;
+  height: 320vh;
+  border-top: 1px solid var(--line);
+}
+.dec__sticky {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: radial-gradient(ellipse 50% 40% at 35% 30%, rgba(var(--acc-rgb), 0.05), transparent 70%);
+}
+.dec__inner {
+  padding-top: 60px;
+}
+.dec__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.dec__words {
+  display: grid;
+  margin-top: 2.5svh;
+  font-weight: 500;
+}
+.dword {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.dword__idx {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-4);
+  transition: color 0.5s;
+}
+.dword__w {
+  font-family: var(--display);
+  font-size: min(12.5vw, 18svh);
+  line-height: 0.88;
+  letter-spacing: -0.055em;
+  color: var(--text-4);
+  transition:
+    color 0.7s var(--ease),
+    text-shadow 0.9s var(--ease);
+}
+.dword__note {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--amber);
+  text-align: right;
+}
+.dword__scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--amber);
+  box-shadow: 0 0 12px var(--amber);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.9s var(--ease);
+}
+.dword.is-lit .dword__w {
+  color: var(--text);
+}
+.dword.is-lit .dword__scan {
+  transform: scaleX(1);
+}
+.dword.is-win .dword__w {
+  color: var(--acc);
+  text-shadow: 0 0 80px rgba(var(--acc-rgb), 0.35);
+}
+.dword.is-win .dword__idx,
+.dword.is-win .dword__note {
+  color: var(--acc);
+}
+.dword.is-win .dword__scan {
+  background: var(--acc);
+  box-shadow: 0 0 16px var(--acc);
+  transform: scaleX(1);
+}
+.dword.is-out .dword__w {
+  color: rgba(255, 255, 255, 0.05);
+}
+.dword.is-out .dword__note {
+  color: var(--text-4);
+}
+
+.dec__dossier {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 3svh;
+}
+.dcard {
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+.dcard__k {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--acc);
+}
+.dcard__big {
+  margin-top: 8px;
+  font-family: var(--display);
+  font-size: 1.7rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.dcard__big span {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+.dcard__rows {
+  margin: 8px 0 0;
+}
+.dcard__rows div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.dcard__rows dt {
+  color: var(--text-3);
+}
+.dcard__rows dd {
+  margin: 0;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .dcard:nth-child(n + 4) {
+    display: none;
+  }
+  .dec__dossier {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .dec {
+    height: auto;
+    padding-block: var(--section-y);
+  }
+  .dec__sticky {
+    position: relative;
+    height: auto;
+  }
+  .dec__inner {
+    padding-top: 0;
+  }
+  .dec__top .caps {
+    display: none;
+  }
+  .dec__words {
+    margin-top: 32px;
+  }
+  .dword {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding-block: 6px;
+  }
+  .dword__w {
+    font-size: 16vw;
+  }
+  .dword__note {
+    grid-column: 2;
+    text-align: left;
+    font-size: 10px;
+    min-height: 1.4em;
+  }
+  .dec__dossier {
+    grid-template-columns: 1fr 1fr;
+    margin-top: 28px;
+  }
+  .dcard:nth-child(n + 4) {
+    display: block;
+  }
+  .dcard:last-child {
+    grid-column: 1 / -1;
+  }
+}

@@ -7,7 +7,17 @@ export const fadeUp = {
   show: { opacity: 1, y: 0, transition: { duration: 0.9, ease: EASE } },
 }
 
-export const stagger = (each = 0.08, delay = 0) => ({
+/**
+ * Clamped linear map as a plain function. Scroll-linked opacity must go through a
+ * function transform: framer-motion can otherwise hand an array-mapped opacity to a
+ * native ScrollTimeline, which mis-mapped the section offsets in testing.
+ */
+export const lerpRange = (inA, inB, outA, outB) => (v) => {
+  const t = Math.min(1, Math.max(0, (v - inA) / (inB - inA)))
+  return outA + (outB - outA) * t
+}
+
+export const stagger =(each = 0.08, delay = 0) => ({
   hidden: {},
   show: { transition: { staggerChildren: each, delayChildren: delay } },
 })

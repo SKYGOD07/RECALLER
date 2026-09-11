@@ -1,0 +1,313 @@
+.trust {
+  position: relative;
+  border-block: 1px solid var(--line);
+  background: linear-gradient(180deg, #040404, #070707 50%, #040404);
+  overflow: hidden;
+}
+.trust__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 40% 50% at 18% 62%, rgba(var(--em-rgb), 0.09), transparent 70%),
+    radial-gradient(ellipse 30% 40% at 82% 62%, rgba(var(--acc-rgb), 0.05), transparent 70%);
+}
+.trust .wrap {
+  position: relative;
+}
+
+.trust__title {
+  margin-top: clamp(28px, 4vw, 48px);
+  font-family: var(--display);
+  font-size: clamp(2.3rem, 6.4vw, 7.6rem);
+  font-weight: 500;
+  line-height: 0.92;
+  letter-spacing: -0.048em;
+}
+.trust__soft {
+  display: block;
+  color: var(--text-3);
+}
+
+/* ---------- split ---------- */
+
+.trust__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+  margin-top: clamp(56px, 7vw, 110px);
+}
+.tcol {
+  padding: clamp(22px, 2.6vw, 36px);
+  border-radius: 26px;
+}
+.tcol--model {
+  background: radial-gradient(ellipse 90% 80% at 30% 20%, rgba(var(--em-rgb), 0.07), transparent 70%);
+  box-shadow: inset 0 0 0 1px rgba(var(--em-rgb), 0.1);
+}
+.tcol--engine {
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% 44px,
+    rgba(255, 255, 255, 0.012);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.tcol__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tcol__tag {
+  font-family: var(--display);
+  font-size: clamp(1.6rem, 2.4vw, 2.4rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--emerald);
+}
+.tcol__tag--acc {
+  color: var(--acc);
+}
+
+.excerpt {
+  position: relative;
+  display: grid;
+  gap: 30px;
+  margin-top: 30px;
+  padding: 34px 18px 18px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  overflow: hidden;
+}
+.excerpt__scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, rgba(var(--em-rgb), 0.1) 48%, transparent 52%);
+  background-size: 200% 100%;
+  animation: shimmer 4.5s linear infinite;
+}
+.anno {
+  position: relative;
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: var(--text);
+  background: rgba(var(--em-rgb), 0.1);
+  box-shadow: inset 0 -1px 0 rgba(var(--em-rgb), 0.8);
+}
+.anno em {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 5px);
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--emerald);
+}
+.anno--amt {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.4);
+}
+.anno--amt em {
+  left: auto;
+  right: 0;
+  color: var(--text-3);
+}
+
+.tcol__list {
+  margin-top: 26px;
+}
+.tcol__list li {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.tcol__verb {
+  font-family: var(--display);
+  font-size: 1.2rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.tcol__note {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--text-3);
+}
+
+.boundary {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.boundary__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--line-3) 20%, var(--line-3) 80%, transparent);
+}
+.boundary__tag {
+  position: sticky;
+  top: 45vh;
+  align-self: flex-start;
+  margin-top: 120px;
+  padding: 14px 6px;
+  border-radius: 999px;
+  writing-mode: vertical-rl;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.boundary__flow {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  right: 12px;
+  height: 1px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.boundary__flow i {
+  position: absolute;
+  top: 0;
+  width: 40%;
+  height: 1px;
+  background: var(--acc);
+  box-shadow: 0 0 8px var(--acc);
+  animation: flowX 1.8s var(--ease-io) infinite;
+}
+@keyframes flowX {
+  from {
+    left: -40%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+.calc {
+  margin: 26px 0 0;
+}
+.calc__row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: baseline;
+  gap: 12px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.calc__row dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+}
+.calc__row dd {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.calc__v {
+  font-family: var(--mono);
+  font-size: clamp(1.6rem, 2.6vw, 2.5rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--acc);
+  font-variant-numeric: tabular-nums;
+}
+.calc__f {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.calc__run {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+
+/* ---------- the law ---------- */
+
+.trust__law {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 40px clamp(32px, 6vw, 96px);
+  margin-top: clamp(80px, 10vw, 150px);
+  padding-top: clamp(40px, 5vw, 64px);
+  border-top: 1px solid var(--line);
+}
+.trust__facts {
+  display: grid;
+}
+.fact {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: baseline;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.fact__n {
+  font-family: var(--display);
+  font-size: 1.7rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--acc);
+}
+.fact__l {
+  font-size: 14.5px;
+  color: var(--text-2);
+}
+
+@media (max-width: 960px) {
+  .trust__split {
+    grid-template-columns: 1fr;
+  }
+  .boundary {
+    height: 64px;
+  }
+  .boundary__line {
+    top: 50%;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--line-3) 20%, var(--line-3) 80%, transparent);
+  }
+  .boundary__tag {
+    position: relative;
+    top: auto;
+    align-self: center;
+    margin: 0;
+    padding: 6px 14px;
+    writing-mode: horizontal-tb;
+  }
+  .boundary__flow {
+    display: none;
+  }
+  .trust__law {
+    grid-template-columns: 1fr;
+  }
+  .calc__row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
