@@ -112,7 +112,7 @@
       "threshold": 0.35,
       "refer_band": [0.35, 0.5],
       "severity": "ADVISORY",
-      "reject_reason": "R06",
+      "reject_reason": null,
       "refer_reason": "F07",
       "pass_reason": "A06",
       "rationale": "Month-on-month income dispersion above 35% indicates unstable earnings."
