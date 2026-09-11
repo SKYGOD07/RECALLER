@@ -221,16 +221,18 @@ def allowed_numbers(record: Dict[str, Any]) -> List[float]:
     return numbers_in(json.dumps(parts, default=str, ensure_ascii=False))
 
 
+_RESTATEMENTS = (1, 100, 1 / 1000, 1 / 100000)  # as-is, percent, thousands, lakhs
+
+
 def unsupported_numbers(text: str, allowed: List[float]) -> List[float]:
     bad = []
     for token in numbers_in(text):
         if token <= 12 or 1900 <= token <= 2100:  # counts, months, years
             continue
         decimals = len(str(token).split(".")[1]) if "." in str(token) and not token.is_integer() else 0
-        ok = any(
-            round(a, decimals) == round(token, decimals) or round(a * 100, decimals) == round(token, decimals)
-            for a in allowed
-        )
+        # A record figure may be restated as a percentage (0.271 → 27.1) or in
+        # thousands / lakhs (90,000 → "90k", 2,12,000 → "2.12 lakh"); nothing else passes.
+        ok = any(round(a * scale, decimals) == round(token, decimals) for a in allowed for scale in _RESTATEMENTS)
         if not ok:
             bad.append(token)
     return bad

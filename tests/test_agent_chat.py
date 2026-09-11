@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from recaller.ai.hermes import ModelReply, OllamaProvider, ScriptedProvider
+from recaller.ai.hermes import ModelReply, OllamaProvider, ScriptedProvider, unsupported_numbers
 from recaller.app.server import create_app
 from recaller.config import Settings
 
@@ -53,6 +53,14 @@ class TestAsk(unittest.TestCase):
                 self.assertEqual([x["kind"] for x in runs], ["ask"])
 
                 self.assertEqual(c.post("/api/applications/RCL-2026-0418/agent/ask", json={"question": ""}).status_code, 422)
+
+
+class TestNumericGuard(unittest.TestCase):
+    def test_scaled_restatements_pass_and_invented_figures_do_not(self):
+        allowed = [90000.0, 420000.0, 212000.0, 0.271]
+        # Seen live from Nemotron: "₹212,000 in [₹90k–₹420k]".
+        self.assertEqual(unsupported_numbers("₹212,000 in [₹90k–₹420k]; 2.12 lakh; FOIR 27.1%", allowed), [])
+        self.assertEqual(unsupported_numbers("The EMI is 987654.", allowed), [987654.0])
 
 
 class TestRestart(unittest.TestCase):
