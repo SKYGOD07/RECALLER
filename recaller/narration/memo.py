@@ -365,7 +365,9 @@ def numeric_tokens(text: str) -> str:
     return "|".join(matches)
 
 
-def narrate(memo: Dict[str, Any], stylist: Optional[Callable[[str], str]] = None) -> Dict[str, Any]:
+async def narrate(
+    memo: Dict[str, Any], stylist: Optional[Callable[..., Any]] = None
+) -> Dict[str, Any]:
     """Optional LLM pass. Discards rewrite if any numeric token moves."""
     if not stylist:
         return memo
@@ -376,7 +378,10 @@ def narrate(memo: Dict[str, Any], stylist: Optional[Callable[[str], str]] = None
             sections.append(s)
             continue
         try:
-            rewritten = stylist(s["body"])
+            res = stylist(s["body"])
+            if inspect.isawaitable(res):
+                res = await res
+            rewritten = str(res or "").strip()
             if numeric_tokens(rewritten) == numeric_tokens(s["body"]):
                 sections.append({**s, "body": rewritten, "styled": True})
             else:
@@ -385,3 +390,4 @@ def narrate(memo: Dict[str, Any], stylist: Optional[Callable[[str], str]] = None
             sections.append(s)
 
     return {**memo, "sections": sections}
+
