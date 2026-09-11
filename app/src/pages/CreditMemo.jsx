@@ -82,7 +82,7 @@ function SectionBody({ section: s, record }) {
   switch (s.kind) {
     case 'verdict':
       return (
-        <div className={`verdict verdict--${s.body.includes('recommended') ? 'APPROVE' : 'REFER'}`} style={{ padding: 16 }}>
+        <div className={`verdict verdict--${record.decision.decision}`} style={{ padding: 16 }}>
           <span className="verdict__word" style={{ fontSize: 22 }}>
             {record.decision.decision}
           </span>

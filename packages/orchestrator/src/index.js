@@ -283,7 +283,10 @@ export async function resumeUnderwriting({ record, resolutions, policy, onStage 
 function createStageRunner(box, clock, onStage) {
   return async function tick(planId, fn) {
     const plan = STAGE_PLAN.find((p) => p.id === planId);
-    onStage({ id: planId, status: 'RUNNING' });
+    // Awaited, so a caller may hold the stage open — the console uses this to
+    // pace the progress view. `started` is taken afterwards, so the duration
+    // written to the audit trail is real engine time, never presentation delay.
+    await onStage({ id: planId, status: 'RUNNING' });
     const started = Date.now();
     const out = await fn();
     const ms = Date.now() - started;

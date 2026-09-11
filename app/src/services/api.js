@@ -44,27 +44,42 @@ const BASE = import.meta.env.VITE_RECALLER_API ?? '';
  * ================================================================== */
 
 const LS_KEY = 'recaller.console.v1';
+const STORE_KEY = '__recaller_console_store__';
 
-const state = {
-  /** application id → header (borrower, asset, loan request, status) */
-  applications: new Map(),
-  /** application id → document bundle (with synthetic payloads) */
-  bundles: new Map(),
-  /** application id → completed or suspended underwriting record */
-  records: new Map(),
-  /** application id → { [stageId]: 'PENDING' | 'RUNNING' | 'DONE' | 'HELD' } */
-  progress: new Map(),
-  /** application id → replay results, newest first */
-  replays: new Map(),
-};
+/**
+ * The store is anchored on globalThis rather than held in module scope.
+ *
+ * Vite's HMR re-imports a changed module under a cache-busting URL, which
+ * creates a second instance of every module downstream of it. Module-level
+ * mutable state would silently fork at that point — the mounted tree keeps
+ * reading one copy while writes land in the other, and the console appears
+ * empty. Anchoring on the global keeps exactly one store across reloads.
+ */
+const state =
+  globalThis[STORE_KEY] ??
+  (globalThis[STORE_KEY] = {
+    /** application id → header (borrower, asset, loan request, status) */
+    applications: new Map(),
+    /** application id → document bundle (with synthetic payloads) */
+    bundles: new Map(),
+    /** application id → completed or suspended underwriting record */
+    records: new Map(),
+    /** application id → { [stageId]: 'PENDING' | 'RUNNING' | 'DONE' | 'HELD' } */
+    progress: new Map(),
+    /** application id → replay results, newest first */
+    replays: new Map(),
+    listeners: new Set(),
+    snapshotToken: 0,
+    snapshot: null,
+    seeded: false,
+    sequence: 500,
+  });
 
-const listeners = new Set();
-let snapshotToken = 0;
-let snapshot = null;
+const listeners = state.listeners;
 
 function emit() {
-  snapshotToken += 1;
-  snapshot = null;
+  state.snapshotToken += 1;
+  state.snapshot = null;
   listeners.forEach((fn) => fn());
 }
 
@@ -75,16 +90,16 @@ export function subscribe(fn) {
 
 /** Stable snapshot for useSyncExternalStore — identity changes only on emit. */
 export function getSnapshot() {
-  if (snapshot === null) {
-    snapshot = {
-      token: snapshotToken,
+  if (state.snapshot === null) {
+    state.snapshot = {
+      token: state.snapshotToken,
       applications: [...state.applications.values()],
       records: state.records,
       progress: state.progress,
       replays: state.replays,
     };
   }
-  return snapshot;
+  return state.snapshot;
 }
 
 /* ---- seeding & persistence ---------------------------------------- */
@@ -120,11 +135,9 @@ function stripRuntime(a) {
   return rest;
 }
 
-let seeded = false;
-
 export async function seed() {
-  if (seeded) return;
-  seeded = true;
+  if (state.seeded) return;
+  state.seeded = true;
 
   SYNTHETIC_APPLICATIONS.forEach((app) => {
     const { documents, scenario, ...header } = app;
@@ -141,16 +154,23 @@ export async function seed() {
     state.progress.set(app.id, blankProgress());
   });
 
-  // Restore whatever the officer had already done in a previous session.
+  // Paint the queue before rehydration runs, so the console is usable
+  // immediately and a slow or failing restore can never leave it blank.
+  emit();
+
   let saved = null;
   try {
     saved = JSON.parse(localStorage.getItem(LS_KEY) ?? 'null');
   } catch {
     saved = null;
   }
+  if (!saved?.apps) return;
 
-  if (saved?.apps) {
-    for (const entry of saved.apps) {
+  // Restore what the officer had already done. Each entry is restored
+  // independently: one unreadable record must not cost the officer the rest of
+  // the queue, so a failure is reported and the loop continues.
+  for (const entry of saved.apps) {
+    try {
       if (entry.custom && entry.documents) {
         state.applications.set(entry.id, { ...entry.header, custom: true });
         state.bundles.set(entry.id, entry.documents);
@@ -160,6 +180,8 @@ export async function seed() {
         // eslint-disable-next-line no-await-in-loop
         await rehydrate(entry.id, entry.resolutions ?? []);
       }
+    } catch (err) {
+      console.error(`[recaller] could not restore ${entry.id}; it returns to its unprocessed state.`, err);
     }
   }
 
@@ -241,11 +263,9 @@ export function getReplays(id) {
  * Write
  * ================================================================== */
 
-let sequence = 500;
-
 export function createApplication(form, documents) {
-  sequence += 1;
-  const id = `RCL-2026-0${sequence}`;
+  state.sequence += 1;
+  const id = `RCL-2026-0${state.sequence}`;
   const header = {
     id,
     borrower_name: form.borrower_name,
@@ -387,6 +407,7 @@ export function amendPolicy(overrides) {
   return { ...POLICY, rules, version: `${POLICY.version}+local`, effective_date: new Date().toISOString().slice(0, 10) };
 }
 
+/** Returns every demo file to its unprocessed state and discards custom ones. */
 export function resetConsole() {
   try {
     localStorage.removeItem(LS_KEY);
@@ -395,10 +416,24 @@ export function resetConsole() {
   }
   state.records.clear();
   state.replays.clear();
+
+  [...state.applications.values()]
+    .filter((a) => a.custom)
+    .forEach((a) => {
+      state.applications.delete(a.id);
+      state.bundles.delete(a.id);
+      state.progress.delete(a.id);
+    });
+
   SYNTHETIC_APPLICATIONS.forEach((app) => {
     const header = state.applications.get(app.id);
     if (header) {
-      state.applications.set(app.id, { ...header, status: APP_STATUS.DRAFT, decision: null });
+      state.applications.set(app.id, {
+        ...header,
+        status: APP_STATUS.DRAFT,
+        decision: null,
+        updated_at: app.created_at,
+      });
       state.progress.set(app.id, blankProgress());
     }
   });
