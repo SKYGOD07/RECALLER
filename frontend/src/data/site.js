@@ -9,9 +9,10 @@ export const SITE = {
   },
 }
 
+// Four, deliberately. A premium product company does not need ten.
 export const NAV_LINKS = [
-  { href: '#product', label: 'Product' },
+  { href: '#problem', label: 'Product' },
   { href: '#how', label: 'How it works' },
+  { href: '#product', label: 'Underwriting' },
   { href: '#trust', label: 'Trust' },
-  { href: '#download', label: 'Download' },
 ]
