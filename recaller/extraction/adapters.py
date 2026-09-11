@@ -88,7 +88,7 @@ def age_from(dob_iso: str, as_of_iso: Optional[str] = None) -> int:
         return 30
 
 
-def extract_bundle(
+async def extract_bundle(
     documents: List[Dict[str, Any]],
     application: Dict[str, Any],
     adapter: Any = fixture_adapter,
@@ -104,6 +104,8 @@ def extract_bundle(
             produced = adapter.extract(doc, actual_seed)
         else:
             produced = adapter(doc, actual_seed)
+        if inspect.isawaitable(produced):
+            produced = await produced
         by_document[doc.get("id")] = list(produced.keys())
         fields.update(produced)
 
