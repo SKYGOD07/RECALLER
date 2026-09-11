@@ -1,0 +1,288 @@
+{
+  "policy_id": "RCL-EV-RETAIL",
+  "version": "1.4.0",
+  "effective_date": "2026-07-01",
+  "review_date": "2026-12-31",
+  "owner": "Credit Policy Committee",
+  "description": "Retail credit policy for EV two- and three-wheeler financing to thin-file and new-to-credit borrowers.",
+  "currency": "INR",
+
+  "segments": {
+    "EV_2W": {
+      "label": "Electric Two-Wheeler",
+      "max_ticket": 180000,
+      "min_ticket": 40000,
+      "tenure_months": { "min": 12, "max": 48 },
+      "rate_annual_pct": 16.5
+    },
+    "EV_3W_PASSENGER": {
+      "label": "Electric Three-Wheeler (Passenger)",
+      "max_ticket": 420000,
+      "min_ticket": 90000,
+      "tenure_months": { "min": 18, "max": 60 },
+      "rate_annual_pct": 18.0
+    },
+    "EV_3W_CARGO": {
+      "label": "Electric Three-Wheeler (Cargo)",
+      "max_ticket": 480000,
+      "min_ticket": 90000,
+      "tenure_months": { "min": 18, "max": 60 },
+      "rate_annual_pct": 18.5
+    }
+  },
+
+  "rounding": {
+    "money_dp": 2,
+    "ratio_dp": 4,
+    "mode": "HALF_UP"
+  },
+
+  "confidence": {
+    "field_threshold": 0.8,
+    "critical_field_threshold": 0.88,
+    "critical_fields": [
+      "applicant.name",
+      "applicant.id_number",
+      "bank.account_holder_name",
+      "bank.account_number",
+      "income.verified_monthly_income",
+      "invoice.on_road_price",
+      "invoice.chassis_number"
+    ]
+  },
+
+  "rules": [
+    {
+      "code": "P-FOIR-01",
+      "label": "Fixed Obligation to Income Ratio",
+      "metric": "foir",
+      "operator": "lte",
+      "threshold": 0.5,
+      "refer_band": [0.5, 0.55],
+      "severity": "BLOCKING",
+      "reject_reason": "R01",
+      "refer_reason": "F03",
+      "pass_reason": "A02",
+      "rationale": "Total fixed obligations including the proposed EMI must not exceed 50% of verified monthly income."
+    },
+    {
+      "code": "P-LTV-01",
+      "label": "Loan to Value",
+      "metric": "ltv",
+      "operator": "lte",
+      "threshold": 0.85,
+      "refer_band": [0.85, 0.9],
+      "severity": "BLOCKING",
+      "reject_reason": "R03",
+      "refer_reason": "F04",
+      "pass_reason": "A03",
+      "rationale": "Sanctioned amount must not exceed 85% of the lower of invoice on-road price and dealer-quoted value."
+    },
+    {
+      "code": "P-INC-01",
+      "label": "Minimum verified monthly income",
+      "metric": "verified_monthly_income",
+      "operator": "gte",
+      "threshold": 14000,
+      "refer_band": [12000, 14000],
+      "severity": "BLOCKING",
+      "reject_reason": "R04",
+      "refer_reason": "F05",
+      "pass_reason": "A01",
+      "rationale": "Verified monthly income from bank credits and platform settlements must meet the segment floor."
+    },
+    {
+      "code": "P-INC-02",
+      "label": "Income stability (months of observed credits)",
+      "metric": "income_months_observed",
+      "operator": "gte",
+      "threshold": 6,
+      "refer_band": [4, 6],
+      "severity": "BLOCKING",
+      "reject_reason": "R05",
+      "refer_reason": "F06",
+      "pass_reason": "A05",
+      "rationale": "At least six months of observable income history is required to establish a run-rate."
+    },
+    {
+      "code": "P-INC-03",
+      "label": "Income volatility (coefficient of variation)",
+      "metric": "income_volatility",
+      "operator": "lte",
+      "threshold": 0.35,
+      "refer_band": [0.35, 0.5],
+      "severity": "ADVISORY",
+      "reject_reason": "R06",
+      "refer_reason": "F07",
+      "pass_reason": "A06",
+      "rationale": "Month-on-month income dispersion above 35% indicates unstable earnings."
+    },
+    {
+      "code": "P-BAL-01",
+      "label": "Average monthly balance",
+      "metric": "average_monthly_balance",
+      "operator": "gte",
+      "threshold": 3000,
+      "refer_band": [1500, 3000],
+      "severity": "ADVISORY",
+      "reject_reason": null,
+      "refer_reason": "F08",
+      "pass_reason": "A07",
+      "rationale": "A minimum operating balance evidences liquidity buffer."
+    },
+    {
+      "code": "P-BNC-01",
+      "label": "Returned debits in observation window",
+      "metric": "bounce_count",
+      "operator": "lte",
+      "threshold": 1,
+      "refer_band": [1, 3],
+      "severity": "BLOCKING",
+      "reject_reason": "R07",
+      "refer_reason": "F09",
+      "pass_reason": "A08",
+      "rationale": "More than three returned debits in the window indicates repayment stress."
+    },
+    {
+      "code": "P-AGE-01",
+      "label": "Applicant age at maturity",
+      "metric": "age_at_maturity",
+      "operator": "lte",
+      "threshold": 65,
+      "refer_band": null,
+      "severity": "BLOCKING",
+      "reject_reason": "R08",
+      "refer_reason": null,
+      "pass_reason": "A09",
+      "rationale": "Applicant must not exceed 65 years at the end of the loan tenure."
+    },
+    {
+      "code": "P-AGE-02",
+      "label": "Applicant minimum age",
+      "metric": "applicant_age",
+      "operator": "gte",
+      "threshold": 21,
+      "refer_band": null,
+      "severity": "BLOCKING",
+      "reject_reason": "R09",
+      "refer_reason": null,
+      "pass_reason": null,
+      "rationale": "Applicant must be at least 21 years old at sanction."
+    },
+    {
+      "code": "P-TKT-01",
+      "label": "Ticket size within segment band",
+      "metric": "loan_amount",
+      "operator": "within_segment_ticket",
+      "threshold": null,
+      "refer_band": null,
+      "severity": "BLOCKING",
+      "reject_reason": "R10",
+      "refer_reason": null,
+      "pass_reason": null,
+      "rationale": "Requested amount must fall inside the approved product band for the asset segment."
+    },
+    {
+      "code": "P-TEN-01",
+      "label": "Tenure within segment band",
+      "metric": "tenure_months",
+      "operator": "within_segment_tenure",
+      "threshold": null,
+      "refer_band": null,
+      "severity": "BLOCKING",
+      "reject_reason": "R11",
+      "refer_reason": null,
+      "pass_reason": null,
+      "rationale": "Requested tenure must fall inside the approved product band for the asset segment."
+    },
+    {
+      "code": "P-REC-01",
+      "label": "No blocking reconciliation finding",
+      "metric": "blocking_finding_count",
+      "operator": "lte",
+      "threshold": 0,
+      "refer_band": null,
+      "severity": "BLOCKING",
+      "reject_reason": "R02",
+      "refer_reason": null,
+      "pass_reason": "A04",
+      "rationale": "Material cross-document contradictions must be cleared before sanction."
+    },
+    {
+      "code": "P-REC-02",
+      "label": "Advisory reconciliation findings",
+      "metric": "advisory_finding_count",
+      "operator": "lte",
+      "threshold": 1,
+      "refer_band": [1, 4],
+      "severity": "ADVISORY",
+      "reject_reason": null,
+      "refer_reason": "F10",
+      "pass_reason": null,
+      "rationale": "Multiple advisory discrepancies warrant officer review."
+    },
+    {
+      "code": "P-CNF-01",
+      "label": "All critical evidence fields above confidence floor",
+      "metric": "unresolved_low_confidence_count",
+      "operator": "lte",
+      "threshold": 0,
+      "refer_band": null,
+      "severity": "BLOCKING",
+      "reject_reason": null,
+      "refer_reason": "F01",
+      "pass_reason": "A10",
+      "rationale": "Fields extracted below the confidence floor must be confirmed by an officer before decisioning."
+    }
+  ],
+
+  "reconciliation": {
+    "income_declared_vs_verified": { "advisory_pct": 0.15, "blocking_pct": 0.3 },
+    "platform_vs_bank_credits": { "advisory_pct": 0.12, "blocking_pct": 0.25 },
+    "invoice_vs_onroad": { "advisory_pct": 0.05, "blocking_pct": 0.12 },
+    "name_match": { "advisory_score": 0.88, "blocking_score": 0.7 },
+    "address_match": { "advisory_score": 0.75, "blocking_score": 0.5 }
+  },
+
+  "income_recognition": {
+    "platform_earnings_haircut": 0.1,
+    "cash_deposit_haircut": 0.5,
+    "max_cash_share_of_income": 0.3,
+    "observation_window_months": 6,
+    "method": "LOWER_OF_BANK_CREDIT_RUNRATE_AND_PLATFORM_NET"
+  },
+
+  "reason_codes": {
+    "A01": "Verified monthly income meets policy floor",
+    "A02": "FOIR within policy ceiling",
+    "A03": "LTV within policy ceiling",
+    "A04": "No blocking reconciliation finding",
+    "A05": "Sufficient income history observed",
+    "A06": "Income volatility within tolerance",
+    "A07": "Average monthly balance adequate",
+    "A08": "Repayment conduct clean in observation window",
+    "A09": "Age at maturity within policy",
+    "A10": "All critical evidence above confidence floor",
+    "R01": "FOIR exceeds policy ceiling",
+    "R02": "Material cross-document contradiction unresolved",
+    "R03": "LTV exceeds policy ceiling",
+    "R04": "Verified income below policy floor",
+    "R05": "Insufficient income history",
+    "R06": "Income volatility beyond tolerance",
+    "R07": "Adverse repayment conduct - returned debits",
+    "R08": "Age at maturity exceeds policy",
+    "R09": "Applicant below minimum age",
+    "R10": "Requested amount outside product band",
+    "R11": "Requested tenure outside product band",
+    "F01": "Low-confidence evidence requires officer verification",
+    "F02": "Officer verification required",
+    "F03": "FOIR in referral band",
+    "F04": "LTV in referral band",
+    "F05": "Verified income in referral band",
+    "F06": "Income history in referral band",
+    "F07": "Income volatility in referral band",
+    "F08": "Average monthly balance in referral band",
+    "F09": "Returned debits in referral band",
+    "F10": "Multiple advisory reconciliation findings"
+  }
+}
