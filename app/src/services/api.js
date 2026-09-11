@@ -434,6 +434,16 @@ export async function startAgentRun(id, kind) {
   }
 }
 
+/** Every agent run for a file, newest first. */
+export function listAgentRuns(id) {
+  return request('GET', `/api/applications/${encodeURIComponent(id)}/agent-runs`);
+}
+
+/** One conversational turn with the model about an underwritten file; resolves to the stored `ask` run. */
+export function askAgent(id, question, history = []) {
+  return request('POST', `/api/applications/${encodeURIComponent(id)}/agent/ask`, { json: { question, history } });
+}
+
 /* ================================================================== *
  * Policy helpers, reset
  * ================================================================== */
