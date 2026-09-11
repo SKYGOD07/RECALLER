@@ -29,6 +29,11 @@ export default defineConfig({
   },
   server: {
     fs: { allow: [from('..')] },
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:4180', changeOrigin: true },
+      '/docs': { target: 'http://127.0.0.1:4180' },
+      '/openapi.json': { target: 'http://127.0.0.1:4180' },
+    },
   },
   build: {
     chunkSizeWarningLimit: 1200,
