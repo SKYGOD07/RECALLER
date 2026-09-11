@@ -1,6 +1,5 @@
-"""RECALLER - Application Server."""
+"""RECALLER — application server (FastAPI). Build the app with ``create_app()``."""
 
-from .server import app
-from .store import AppStore
+from .server import create_app
 
-__all__ = ["app", "AppStore"]
+__all__ = ["create_app"]
