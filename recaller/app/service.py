@@ -27,7 +27,15 @@ from ..ai.hermes import (
     review_file,
 )
 from ..core.audit import verify_ledger
-from ..core.constants import APP_STATUS, DOC_LABELS, DOC_TYPES, OPTIONAL_DOCS, REQUIRED_DOCS, WORKFLOW_VERSION
+from ..core.constants import (
+    APP_STATUS,
+    DOC_LABELS,
+    DOC_TYPES,
+    INFORMANT_RELATIONSHIP,
+    OPTIONAL_DOCS,
+    REQUIRED_DOCS,
+    WORKFLOW_VERSION,
+)
 from ..core.hash import hash_value
 from ..credit_engine.engine import calculate_emi
 from ..documents.pdf import ACCEPTED_TYPES, ocr_available, read_document
@@ -40,7 +48,8 @@ from ..orchestrator.pipeline import (
     run_underwriting,
     run_what_if,
 )
-from ..synthetic.data import SYNTHETIC_APPLICATIONS
+from ..extraction.informant import attestation_quality
+from ..synthetic.data import PAGES, SYNTHETIC_APPLICATIONS
 from .db import Database, now_iso
 from .jobs import JobConflict, JobManager
 
