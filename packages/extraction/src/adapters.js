@@ -6,6 +6,7 @@
 
 import { DOC_TYPES, PROVENANCE } from '@core/constants.js'
 import { hashValue, rng } from '@core/hash.js'
+import { attestationQuality, confidenceFor, isAttested } from './informant.js'
 import { EVIDENCE_SPEC, SPEC_BY_PATH, field, getPath, toValues } from './schema.js'
 
 function citationSnippet(spec, value) {
@@ -34,7 +35,7 @@ function baseConfidence(spec, value, nextPrng) {
 const fixtureAdapter = {
   name: 'fixture',
 
-  extract(document, seed) {
+  extract(document, seed, policy = null) {
     const docId = document.id || ''
     const nextPrng = rng(`${seed}:${docId}`)
     const payload = document.payload || {}
@@ -43,15 +44,28 @@ const fixtureAdapter = {
     const out = {}
 
     const docType = document.type
+
+    // An informal-lender reference is not parsed out of a scan — it is a
+    // statement someone signed. Its confidence comes from how well that
+    // statement holds together, computed once for the whole reference.
+    let quality = null
+    if (docType === DOC_TYPES.INFORMANT_REFERENCE) {
+      quality = attestationQuality(payload.informant || {}, policy || {})
+    }
+
     for (const spec of EVIDENCE_SPEC) {
       if (spec.doc === docType) {
         const p = spec.path
         const val = getPath(payload, p)
         if (val == null) continue
         const forced = degrade[p]
-        const conf = forced != null ? forced : baseConfidence(spec, val, nextPrng)
+        let conf
+        if (forced != null) conf = forced
+        else if (quality) conf = confidenceFor(p, payload.informant || {}, policy || {}, quality)
+        else conf = baseConfidence(spec, val, nextPrng)
         out[p] = field(p, val, {
           confidence: conf,
+          provenance: quality ? PROVENANCE.INFORMANT : PROVENANCE.EXTRACTED,
           citation: {
             document: document.filename || '',
             document_id: docId,
@@ -60,6 +74,16 @@ const fixtureAdapter = {
           },
           raw: typeof val === 'string' ? val : null,
         })
+      }
+    }
+
+    if (quality && Object.keys(out).length) {
+      // The scoring is part of the evidence, not a hidden step: every informant
+      // field carries the reference's quality breakdown so the console and the
+      // memo can show why the number is what it is.
+      for (const f of Object.values(out)) {
+        f.attested = true
+        f.attestation = quality
       }
     }
     return out
@@ -86,18 +110,23 @@ function ageFrom(dobIso, asOfIso) {
 /**
  * Run the extraction stage across a document bundle.
  */
-export async function extractBundle({ documents, application, adapter = fixtureAdapter, seed = null }) {
+export async function extractBundle({
+  documents,
+  application,
+  adapter = fixtureAdapter,
+  seed = null,
+  policy = null,
+}) {
   const actualSeed = seed || application.id || 'RECALLER'
   const fields = {}
   const byDocument = {}
 
   for (const doc of documents) {
-    let produced
-    if (typeof adapter.extract === 'function') {
-      produced = adapter.extract(doc, actualSeed)
-    } else {
-      produced = adapter(doc, actualSeed)
-    }
+    // Third-party adapters predate the informant reference and take two
+    // arguments; passing a third is harmless, and adapters that want the policy
+    // simply declare it.
+    const fn = typeof adapter.extract === 'function' ? adapter.extract.bind(adapter) : adapter
+    let produced = fn(doc, actualSeed, policy || {})
     if (produced instanceof Promise) produced = await produced
     byDocument[doc.id] = Object.keys(produced)
     Object.assign(fields, produced)
@@ -153,6 +182,12 @@ export function applyConfidenceGate(fields, policy) {
   const confPolicy = policy.confidence || {}
   const fieldThreshold = confPolicy.field_threshold ?? 0.8
   const criticalFieldThreshold = confPolicy.critical_field_threshold ?? 0.88
+  // Attested evidence is structurally capped below the extraction floors — a
+  // signed statement can never score like a parsed document. Holding it to the
+  // same bar would route every informal-lender reference to a human and teach
+  // officers to rubber-stamp the queue. It gets its own, honestly lower, bar.
+  const attestedThreshold = confPolicy.attested_field_threshold ?? 0.5
+  const attestedCriticalThreshold = confPolicy.attested_critical_field_threshold ?? 0.66
   const criticalFields = confPolicy.critical_fields || []
 
   const held = []
@@ -160,7 +195,10 @@ export function applyConfidenceGate(fields, policy) {
     if (f.provenance === PROVENANCE.OFFICER) continue
     const p = f.path
     const isCritical = criticalFields.includes(p) || f.critical
-    const floor = isCritical ? criticalFieldThreshold : fieldThreshold
+    const attested = isAttested(f)
+    const floor = attested
+      ? (isCritical ? attestedCriticalThreshold : attestedThreshold)
+      : (isCritical ? criticalFieldThreshold : fieldThreshold)
     const conf = f.confidence ?? 1.0
     if (conf < floor) {
       held.push({
@@ -171,10 +209,9 @@ export function applyConfidenceGate(fields, policy) {
         confidence: conf,
         floor,
         critical: isCritical,
+        attested,
         citation: f.citation,
-        reason: isCritical
-          ? 'Critical field extracted below the strict confidence floor'
-          : 'Extracted below the confidence floor',
+        reason: holdReason(attested, isCritical, f),
         status: 'PENDING',
       })
     }
@@ -188,11 +225,35 @@ export function applyConfidenceGate(fields, policy) {
   return {
     passed: held.length === 0,
     held,
-    thresholds: { field_threshold: fieldThreshold, critical_field_threshold: criticalFieldThreshold },
+    thresholds: {
+      field_threshold: fieldThreshold,
+      critical_field_threshold: criticalFieldThreshold,
+      attested_field_threshold: attestedThreshold,
+      attested_critical_field_threshold: attestedCriticalThreshold,
+    },
   }
 }
 
+/** Say why a field is in the queue, in terms the officer can act on. */
+function holdReason(attested, isCritical, f) {
+  if (attested) {
+    const problems = ((f.attestation || {}).coherence || {}).problems || []
+    if (problems.length) return `Informant reference does not add up: ${problems[0].detail || ''}`
+    if ((f.attestation || {}).contact_verified === false) {
+      return 'Informant contact has not been verified by an officer'
+    }
+    return 'Third-party attestation below the floor for attested evidence'
+  }
+  return isCritical
+    ? 'Critical field extracted below the strict confidence floor'
+    : 'Extracted below the confidence floor'
+}
+
 function coerce(value, valType) {
+  if (valType === 'flag') {
+    if (typeof value === 'boolean') return value
+    return ['TRUE', 'YES', 'Y', '1', 'VERIFIED'].includes(String(value).trim().toUpperCase())
+  }
   if (valType === 'money' || valType === 'number') {
     try {
       const cleaned = String(value).replace(/[,\s₹]/g, '')
@@ -269,8 +330,30 @@ export function applyOfficerResolutions(fields, resolutions) {
 /**
  * Collapse field map to values.
  */
+/**
+ * Collapse the field map to the plain values the deterministic engines read.
+ *
+ * One addition beyond a straight collapse: the attestation breakdown computed
+ * for an informant reference travels with the values under `_attestation`, so
+ * reconciliation can explain a ledger that does not add up without recomputing
+ * it. It is carried, never recalculated — the score the officer saw in the
+ * queue is the score the finding cites.
+ */
 export function materialise(fields) {
-  return toValues(fields)
+  const values = toValues(fields)
+
+  let attestation = null
+  for (const f of Object.values(fields)) {
+    if (f && typeof f === 'object' && f.attestation) {
+      attestation = f.attestation
+      break
+    }
+  }
+  if (attestation && values.informant && typeof values.informant === 'object') {
+    values.informant._attestation = attestation
+  }
+
+  return values
 }
 
 export { fixtureAdapter }

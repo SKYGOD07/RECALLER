@@ -57,7 +57,7 @@
       "informant.current_outstanding",
       "informant.monthly_repayment"
     ],
-    "attested_field_threshold": 0.55,
+    "attested_field_threshold": 0.5,
     "attested_critical_field_threshold": 0.66,
     "informant": {
       "source_confidence_ceiling": 0.74,

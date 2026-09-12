@@ -54,6 +54,7 @@ export const DOC_TYPES = Object.freeze({
   PLATFORM_EARNINGS: 'PLATFORM_EARNINGS',
   DEALER_INVOICE: 'DEALER_INVOICE',
   UTILITY_BILL: 'UTILITY_BILL',
+  INFORMANT_REFERENCE: 'INFORMANT_REFERENCE',
 })
 
 export const DOC_LABELS = Object.freeze({
@@ -64,6 +65,7 @@ export const DOC_LABELS = Object.freeze({
   [DOC_TYPES.PLATFORM_EARNINGS]: 'Platform earnings statement',
   [DOC_TYPES.DEALER_INVOICE]: 'Dealer invoice',
   [DOC_TYPES.UTILITY_BILL]: 'Utility bill',
+  [DOC_TYPES.INFORMANT_REFERENCE]: 'Informal-lender reference',
 })
 
 export const REQUIRED_DOCS = [
@@ -77,6 +79,7 @@ export const OPTIONAL_DOCS = [
   DOC_TYPES.PLATFORM_EARNINGS,
   DOC_TYPES.DRIVING_LICENCE,
   DOC_TYPES.UTILITY_BILL,
+  DOC_TYPES.INFORMANT_REFERENCE,
 ]
 
 export const PROVENANCE = Object.freeze({
@@ -85,4 +88,38 @@ export const PROVENANCE = Object.freeze({
   COMPUTED: 'COMPUTED',
   POLICY: 'POLICY',
   DECLARED: 'DECLARED',
+  INFORMANT: 'INFORMANT',
 })
+
+/**
+ * How the informant came to lend to this borrower.
+ *
+ * A thin-file borrower usually has a credit history; it just was never written
+ * down by a regulated lender. These are the counterparties who did the lending.
+ */
+export const INFORMANT_RELATIONSHIP = Object.freeze({
+  INFORMAL_LENDER: 'INFORMAL_LENDER',
+  SHOPKEEPER_CREDIT: 'SHOPKEEPER_CREDIT',
+  CHIT_FUND: 'CHIT_FUND',
+  SHG: 'SHG',
+  EMPLOYER_ADVANCE: 'EMPLOYER_ADVANCE',
+  FAMILY: 'FAMILY',
+})
+
+export const INFORMANT_RELATIONSHIP_LABELS = Object.freeze({
+  [INFORMANT_RELATIONSHIP.INFORMAL_LENDER]: 'Private moneylender',
+  [INFORMANT_RELATIONSHIP.SHOPKEEPER_CREDIT]: 'Shopkeeper running account',
+  [INFORMANT_RELATIONSHIP.CHIT_FUND]: 'Chit fund',
+  [INFORMANT_RELATIONSHIP.SHG]: 'Self-help group',
+  [INFORMANT_RELATIONSHIP.EMPLOYER_ADVANCE]: 'Employer advance',
+  [INFORMANT_RELATIONSHIP.FAMILY]: 'Family',
+})
+
+// An informant attests; it never verifies. A relationship with no arm's-length
+// character cannot carry the same weight as one that does.
+export const INFORMANT_ARMS_LENGTH = [
+  INFORMANT_RELATIONSHIP.INFORMAL_LENDER,
+  INFORMANT_RELATIONSHIP.SHOPKEEPER_CREDIT,
+  INFORMANT_RELATIONSHIP.CHIT_FUND,
+  INFORMANT_RELATIONSHIP.SHG,
+]

@@ -259,12 +259,20 @@ def attestation_quality(
     if not arms_length:
         ceiling = min(ceiling, float(cfg["non_arms_length_ceiling"]))
 
-    # Identity: who they are, and that we reached them.
-    identity = 0.55 + 0.30 * comp + 0.15 * (1.0 if verified else 0.0)
-    # Ledger: the same, then multiplied down by whether the numbers agree.
-    ledger = (0.50 + 0.25 * comp + 0.25 * depth) * coherence["score"]
+    # Two quality scores in 0..1, then scaled by the ceiling rather than
+    # clamped to it. Clamping looked equivalent and was not: it flattened every
+    # difference above the cap, so a reference with a mild contradiction scored
+    # exactly like a flawless one and the number stopped carrying information.
+    # Scaling keeps the cap absolute while leaving every signal visible.
+    identity_score = 0.55 + 0.30 * comp + 0.15 * (1.0 if verified else 0.0)
+    ledger_score = (0.50 + 0.25 * comp + 0.25 * depth) * coherence["score"]
+
+    identity = ceiling * min(1.0, identity_score)
+    ledger = ceiling * min(1.0, ledger_score)
 
     return {
+        "identity_score": round_half_up(min(1.0, identity_score), 4),
+        "ledger_score": round_half_up(min(1.0, ledger_score), 4),
         "completeness": comp,
         "coherence": coherence,
         "contact_verified": verified,
