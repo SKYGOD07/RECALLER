@@ -104,7 +104,7 @@ class TestSystem(ApiCase):
         boot = self.client.get("/api/bootstrap").json()
         self.assertEqual(len(boot["applications"]), 8)
         self.assertEqual(boot["vocab"]["required_docs"], ["AADHAAR", "PAN", "BANK_STATEMENT", "DEALER_INVOICE"])
-        self.assertEqual(len(boot["stage_plan"]), 12)
+        self.assertEqual(len(boot["stage_plan"]), 13)  # + INFORMANT
         logged = self.client.get("/api/diagnostics/requests").json()
         self.assertEqual(logged[1]["request_id"], "probe-1")
 
@@ -126,6 +126,18 @@ class TestSystem(ApiCase):
         q = self.client.get("/api/quote", params={"segment": "EV_2W", "amount": 95000, "tenure": 36}).json()
         self.assertGreater(q["emi"], 0)
         self.assertEqual(self.client.get("/api/quote", params={"segment": "X", "amount": 1, "tenure": 1}).json()["error"]["code"], "UNKNOWN_SEGMENT")
+
+    def test_extract_draft_from_document(self):
+        r = self.client.post(
+            "/api/applications/extract-draft",
+            files={"file": ("aadhaar.pdf", pdf(DOCS["AADHAAR"]), "application/pdf")},
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["extracted_fields"]["borrower_name"], "Asha Verma")
+        self.assertEqual(body["extracted_fields"]["detected_doc_type"], "AADHAAR")
+        self.assertGreaterEqual(body["extracted_fields"]["confidence"], 0.8)
 
 
 class TestUnderwriting(ApiCase):

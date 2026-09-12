@@ -425,7 +425,220 @@ def reconcile(args: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
+    # 9..13 — informal-lender reference
+    findings.extend(
+        informant_findings(
+            informant=evidence.get("informant") or {},
+            applicant=applicant,
+            credit_metrics=credit_metrics,
+            policy=policy,
+        )
+    )
+
     return summarise(findings)
+
+
+def informant_findings(
+    informant: Dict[str, Any],
+    applicant: Dict[str, Any],
+    credit_metrics: Dict[str, Any],
+    policy: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Cross-check what the informal lender said against what the file shows.
+
+    The reference is the only evidence in the bundle nobody had to produce a
+    document for, so it gets the most scrutiny — and it is also the only
+    evidence that can reveal an obligation the bank statement never carried.
+    """
+    if not informant:
+        return []
+
+    tol = policy.get("reconciliation", {})
+    cfg = policy.get("informal_credit", {})
+    informal = credit_metrics.get("informal_credit") or {}
+    findings: List[Dict[str, Any]] = []
+
+    # 9 — Does the monthly repayment appear in the bank statement?
+    if informal.get("applicable"):
+        corroborated = bool(informal.get("corroborated"))
+        matched = informal.get("matched_debit") or {}
+        monthly = informal.get("monthly_repayment") or 0
+        findings.append(
+            {
+                "code": "RC-INF-01",
+                "label": "Informal repayment vs bank recurring debits",
+                "status": FINDING_STATUS.MATCHED if corroborated else FINDING_STATUS.ADVISORY,
+                "severity": "INFO" if corroborated else "ADVISORY",
+                "comparison": {
+                    "left": {
+                        "field": "Repayment stated by informant",
+                        "value": round_half_up(monthly, 2),
+                        "source": "InformantReference.pdf",
+                        "kind": "money",
+                    },
+                    "right": {
+                        "field": matched.get("label") or "No matching recurring debit",
+                        "value": round_half_up(matched.get("amount", 0), 2) if matched else 0,
+                        "source": "BankStatement.pdf",
+                        "kind": "money",
+                    },
+                },
+                "tolerance": {"match_pct": informal.get("tolerance_pct")},
+                "evidence": ["informant.monthly_repayment", "bank.recurring_debits"],
+                "note": (
+                    "The informal repayment is already visible in the statement and is counted once."
+                    if corroborated
+                    else
+                    "No bank debit matches this repayment, so the obligation was not in the "
+                    "file. The engine has added it to the obligation total."
+                ),
+                "resolution": None,
+            }
+        )
+
+    # 10 — Does the informant ledger add up against itself?
+    attestation = informant.get("_attestation") or {}
+    coherence = attestation.get("coherence") or {}
+    problems = coherence.get("problems") or []
+    if coherence.get("checkable"):
+        findings.append(
+            {
+                "code": "RC-INF-02",
+                "label": "Informant ledger internal consistency",
+                "status": FINDING_STATUS.MATCHED if not problems else FINDING_STATUS.ADVISORY,
+                "severity": "INFO" if not problems else "ADVISORY",
+                "comparison": {
+                    "left": {
+                        "field": "Implied months of repayment",
+                        "value": coherence.get("implied_months_repaid"),
+                        "source": "Derived from informant figures",
+                        "kind": "number",
+                    },
+                    "right": {
+                        "field": "Stated months of relationship",
+                        "value": informant.get("months_known"),
+                        "source": "InformantReference.pdf",
+                        "kind": "number",
+                    },
+                },
+                "tolerance": {"score": coherence.get("score")},
+                "evidence": [
+                    "informant.principal_lent",
+                    "informant.current_outstanding",
+                    "informant.monthly_repayment",
+                    "informant.months_known",
+                ],
+                "note": (
+                    problems[0].get("detail")
+                    if problems
+                    else "Principal, outstanding, repayment and tenure agree with each other."
+                ),
+                "resolution": None,
+            }
+        )
+
+    # 11 — The repayment record itself. This is the point of the reference.
+    missed = informant.get("missed_payments_12m")
+    if missed is not None:
+        max_missed = cfg.get("max_missed_payments_12m", 2)
+        over = float(missed) > float(max_missed)
+        findings.append(
+            {
+                "code": "RC-INF-03",
+                "label": "Informal repayment conduct (last 12 months)",
+                "status": FINDING_STATUS.ADVISORY if over else FINDING_STATUS.MATCHED,
+                "severity": "ADVISORY" if over else "INFO",
+                "comparison": {
+                    "left": {
+                        "field": "Missed payments reported",
+                        "value": float(missed),
+                        "source": "InformantReference.pdf",
+                        "kind": "number",
+                    },
+                    "right": {
+                        "field": "Policy tolerance",
+                        "value": float(max_missed),
+                        "source": "policy.informal_credit",
+                        "kind": "number",
+                    },
+                },
+                "tolerance": {"max_missed_payments_12m": max_missed},
+                "evidence": ["informant.missed_payments_12m", "informant.longest_delay_days"],
+                "note": (
+                    "Informal repayment conduct is outside policy tolerance."
+                    if over
+                    else "A repayment record no bureau holds — the strongest signal a thin file has."
+                ),
+                "resolution": None,
+            }
+        )
+
+    # 12 — Is the relationship long enough to mean anything?
+    months_known = informant.get("months_known")
+    if months_known is not None:
+        min_months = cfg.get("min_months_known", 6)
+        thin = float(months_known) < float(min_months)
+        findings.append(
+            {
+                "code": "RC-INF-04",
+                "label": "Depth of the lending relationship",
+                "status": FINDING_STATUS.ADVISORY if thin else FINDING_STATUS.MATCHED,
+                "severity": "ADVISORY" if thin else "INFO",
+                "comparison": {
+                    "left": {
+                        "field": "Months known",
+                        "value": float(months_known),
+                        "source": "InformantReference.pdf",
+                        "kind": "number",
+                    },
+                    "right": {
+                        "field": "Policy minimum",
+                        "value": float(min_months),
+                        "source": "policy.informal_credit",
+                        "kind": "number",
+                    },
+                },
+                "tolerance": {"min_months_known": min_months},
+                "evidence": ["informant.months_known"],
+                "note": (
+                    "Too short a relationship to carry weight as a credit reference."
+                    if thin
+                    else None
+                ),
+                "resolution": None,
+            }
+        )
+
+    # 13 — Does the informant know the borrower by the name on the KYC?
+    known_as = informant.get("borrower_known_as")
+    if known_as:
+        sim = name_similarity(applicant.get("name"), known_as)
+        findings.append(
+            score_finding(
+                {
+                    "code": "RC-INF-05",
+                    "label": "Applicant name vs name the informant knows",
+                    "left": {
+                        "field": "Applicant name",
+                        "value": applicant.get("name"),
+                        "source": "Aadhaar.pdf",
+                        "kind": "text",
+                    },
+                    "right": {
+                        "field": "Known to informant as",
+                        "value": known_as,
+                        "source": "InformantReference.pdf",
+                        "kind": "text",
+                    },
+                    "similarity": sim,
+                    "tolerance": tol.get("informant_name_match", tol.get("name_match", {})),
+                    "evidence": ["applicant.name", "informant.borrower_known_as"],
+                    "note": "A reference is only a reference if it is about this borrower.",
+                }
+            )
+        )
+
+    return findings
 
 
 def summarise(findings: List[Dict[str, Any]]) -> Dict[str, Any]:

@@ -1,8 +1,9 @@
-/** The application queue — the console's front door. */
-
+import { useState } from 'react'
 import { EmptyState, StatusTag, Tag, decisionKind } from '@/components/common/ui.jsx'
 import { inr, initials, num } from '@/lib/format'
 import { applicationPath, Link } from '@/lib/router'
+import { Plus, Sparkles } from 'lucide-react'
+import NewApplicationModal from './NewApplicationModal.jsx'
 
 const FILTERS = [
   { id: 'ALL', label: 'All files' },
@@ -63,6 +64,7 @@ function Row({ app, segmentLabel }) {
 }
 
 export default function Queue({ applications, policy, filter, onFilter }) {
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const segmentLabel = (seg) => policy?.segments?.[seg]?.label ?? seg
   const visible = applications.filter((a) => matches(a, filter))
 
@@ -77,7 +79,20 @@ export default function Queue({ applications, policy, filter, onFilter }) {
       <header className="qhead">
         <div>
           <p className="caps t3">Loan officer console</p>
-          <h1 className="qhead__title">Applications</h1>
+          <div className="qhead__title-row">
+            <h1 className="qhead__title">Applications</h1>
+            <button
+              type="button"
+              className="btn-new-app"
+              onClick={() => setIsModalOpen(true)}
+            >
+              <Plus size={15} />
+              <span>New Application</span>
+              <span className="btn-new-app__badge">
+                <Sparkles size={11} /> OCR
+              </span>
+            </button>
+          </div>
           <p className="qhead__sub">
             {num(counts.total)} files · {num(counts.decided)} decided · {num(counts.waiting)} awaiting
             verification
@@ -99,6 +114,8 @@ export default function Queue({ applications, policy, filter, onFilter }) {
           ))}
         </div>
       </header>
+
+      <NewApplicationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
 
       {visible.length ? (
         <div className="qlist">

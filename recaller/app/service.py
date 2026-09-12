@@ -22,6 +22,7 @@ from ..ai.hermes import (
     ask_about_file,
     check_provider,
     explain_decision,
+    extract_draft_application,
     provider_status,
     review_file,
 )
@@ -275,6 +276,32 @@ class UnderwritingService:
         }
         self.db.save_application(header)
         return header
+
+    async def extract_application_draft(self, filename: str, data: bytes, content_type: Optional[str] = None) -> Dict[str, Any]:
+        limit = self.settings.max_upload_mb * 1024 * 1024
+        if not data:
+            raise ServiceError(422, "EMPTY_FILE", "The uploaded file is empty.")
+        if len(data) > limit:
+            raise ServiceError(413, "FILE_TOO_LARGE", f"Files are limited to {self.settings.max_upload_mb} MB.")
+        try:
+            result = read_document(data, filename, content_type)
+        except ValueError as exc:
+            raise ServiceError(415, "UNREADABLE_DOCUMENT", str(exc)) from exc
+
+        text = "\n\n".join(result.pages)
+        draft = await extract_draft_application(self.provider, text, filename)
+        return {
+            "success": True,
+            "filename": filename,
+            "media_type": result.media_type,
+            "page_count": result.page_count,
+            "text_chars": result.text_chars,
+            "ocr_used": result.ocr_used,
+            "scanned": result.scanned,
+            "warnings": result.warnings,
+            "text_preview": text[:600],
+            "extracted_fields": draft,
+        }
 
     def delete_application(self, app_id: str) -> None:
         header = self.require_app(app_id)

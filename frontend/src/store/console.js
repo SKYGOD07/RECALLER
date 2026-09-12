@@ -93,6 +93,19 @@ export async function refreshQueue() {
   return applications
 }
 
+export async function createNewApplication(formData, documentFile, documentType = 'AADHAAR') {
+  const app = await api.createApplication(formData)
+  if (documentFile && app?.id) {
+    try {
+      await api.uploadDocument(app.id, documentType, documentFile)
+    } catch {
+      /* document upload is best effort during intake */
+    }
+  }
+  await refreshQueue()
+  return app
+}
+
 export async function loadApplication(id) {
   try {
     const detail = await api.getApplication(id)

@@ -125,6 +125,88 @@ def calculate_obligations(recurring_debits: Optional[List[Dict[str, Any]]] = Non
     return {"total": sum_rupees([i["amount"] for i in items]), "items": items}
 
 
+INFORMAL_CREDIT_DEFAULTS = {
+    "count_undisclosed_as_obligation": True,
+    "obligation_match_tolerance_pct": 0.15,
+    "min_months_known": 6,
+    "max_missed_payments_12m": 2,
+}
+
+
+def reconcile_informant_obligation(
+    informant: Optional[Dict[str, Any]],
+    recurring_debits: Optional[List[Dict[str, Any]]] = None,
+    policy: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Decide, deterministically, whether an informant's loan is already counted.
+
+    An informal lender says the borrower pays them 3,000 a month. Either the
+    bank statement already shows that outflow — in which case it is in the
+    obligation total and adding it again would double-count a real borrower out
+    of a real loan — or it does not, in which case the file has been under-
+    stating its obligations and the engine now knows better.
+
+    Matching is on amount, within a policy tolerance. That is the only signal
+    available: a cash repayment to a shopkeeper carries no narration to match on.
+    """
+    cfg = dict(INFORMAL_CREDIT_DEFAULTS)
+    cfg.update((policy or {}).get("informal_credit") or {})
+
+    monthly = to_rupees(to_paise((informant or {}).get("monthly_repayment") or 0))
+    outstanding = to_rupees(to_paise((informant or {}).get("current_outstanding") or 0))
+
+    if not informant or monthly <= 0 or outstanding <= 0:
+        # A settled informal loan is a repayment record, not an obligation.
+        return {
+            "applicable": False,
+            "corroborated": False,
+            "matched_debit": None,
+            "added": 0.0,
+            "monthly_repayment": monthly,
+            "outstanding": outstanding,
+            "tolerance_pct": cfg["obligation_match_tolerance_pct"],
+        }
+
+    tolerance = float(cfg["obligation_match_tolerance_pct"])
+    matched = None
+    for d in recurring_debits or []:
+        if d.get("isObligation") is False:
+            continue
+        amount = to_rupees(to_paise(d.get("amount", 0)))
+        if amount <= 0:
+            continue
+        base = max(amount, monthly)
+        if abs(amount - monthly) / base <= tolerance:
+            matched = {
+                "label": d.get("label", ""),
+                "amount": amount,
+                "delta": round_half_up(abs(amount - monthly), 2),
+                "delta_pct": round_half_up(abs(amount - monthly) / base, 4),
+            }
+            break
+
+    add = bool(cfg["count_undisclosed_as_obligation"]) and matched is None
+    return {
+        "applicable": True,
+        "corroborated": matched is not None,
+        "matched_debit": matched,
+        "added": monthly if add else 0.0,
+        "monthly_repayment": monthly,
+        "outstanding": outstanding,
+        "tolerance_pct": tolerance,
+    }
+
+
+def _as_number(value: Any) -> Optional[float]:
+    """Numeric or None — policy rules compare numbers, and absent is not zero."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def mean(xs: List[Any]) -> float:
     if not xs:
         return 0.0
@@ -232,6 +314,27 @@ def compute_credit_metrics(
     )
 
     obligations = calculate_obligations(bank_ev.get("recurring_debits", []))
+
+    # An informal-lender reference can only ever move obligations upward, and
+    # only through this engine. The informant states a number; the engine
+    # decides whether it is already in the total.
+    informant_ev = evidence.get("informant") or {}
+    informal = reconcile_informant_obligation(
+        informant_ev, bank_ev.get("recurring_debits", []), policy
+    )
+    if informal["added"] > 0:
+        obligations["items"].append(
+            {
+                "label": "Informal credit — {0}".format(
+                    informant_ev.get("business_name") or informant_ev.get("name") or "informant reference"
+                ),
+                "amount": informal["added"],
+                "kind": "INFORMAL_CREDIT",
+                "source": "Informant reference (no matching bank debit)",
+            }
+        )
+        obligations["total"] = sum_rupees([i["amount"] for i in obligations["items"]])
+
     emi = calculate_emi(amount, rate, tenure)
     ratio_dp = policy.get("rounding", {}).get("ratio_dp", 4)
     foir = calculate_foir(income["verified_monthly_income"], obligations["total"], emi, ratio_dp)
@@ -260,6 +363,7 @@ def compute_credit_metrics(
         "invoice_on_road_price": invoice_value,
         "assessed_value": alt_value,
         "months_observed": income["months_observed"],
+        "informal_obligation_added": informal["added"],
     }
 
     return {
@@ -282,9 +386,18 @@ def compute_credit_metrics(
             "total_payable": schedule["totalPayable"],
             "loan_amount": amount,
             "tenure_months": tenure,
+            # Informal credit. Numeric so policy rules can bind to them; the
+            # informant supplies the statement, the engine supplies the numbers.
+            "informal_monthly_repayment": informal["monthly_repayment"],
+            "informal_outstanding": informal["outstanding"],
+            "informal_obligation_added": informal["added"],
+            "informal_corroborated": 1 if informal["corroborated"] else 0,
+            "informal_missed_payments_12m": _as_number(informant_ev.get("missed_payments_12m")),
+            "informal_months_known": _as_number(informant_ev.get("months_known")),
         },
         "income_breakdown": income,
         "obligation_breakdown": obligations,
+        "informal_credit": informal,
         "schedule": schedule["rows"],
         "input_hash": hash_value(inputs),
     }

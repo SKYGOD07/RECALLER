@@ -5,7 +5,7 @@ engine or the what-if solver, and the registry refuses any tool that decides or
 computes a credit outcome. tests/test_hermes.py asserts both.
 """
 
-from .adapter import AgentExtractionAdapter, allowed_numbers, ask_about_file, explain_decision, review_file, unsupported_numbers
+from .adapter import AgentExtractionAdapter, allowed_numbers, ask_about_file, explain_decision, extract_draft_application, review_file, unsupported_numbers
 from .delegation import DELEGATE_BLOCKED_TOOLS, delegate_task, register_delegate_tool
 from .loop import DEFAULT_MAX_ITERATIONS, AgentRun, run_agent
 from .providers import (
@@ -49,6 +49,7 @@ __all__ = [
     "check_provider",
     "delegate_task",
     "explain_decision",
+    "extract_draft_application",
     "generate_structured",
     "is_forbidden_tool_name",
     "list_skills",

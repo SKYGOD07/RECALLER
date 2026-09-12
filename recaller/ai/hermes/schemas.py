@@ -52,3 +52,19 @@ class DecisionExplanation(BaseModel):
         if isinstance(v, list):
             v = [p for p in v if str(p).strip()][:5]
         return v
+
+
+class ApplicationDraftExtraction(BaseModel):
+    borrower_name: str = Field(default="", description="Full name of applicant/borrower/customer")
+    segment: str = Field(default="EV_2W", description="EV asset category: EV_2W, EV_3W_PASSENGER, or EV_3W_CARGO")
+    loan_amount: float = Field(default=0.0, description="Requested loan amount or on-road vehicle price in INR")
+    tenure_months: int = Field(default=36, description="Requested tenure in months, default 36")
+    declared_monthly_income: float = Field(default=0.0, description="Monthly income or monthly credit turnover in INR")
+    branch: str = Field(default="", description="City or branch location if visible")
+    dealer: str = Field(default="", description="Dealer or showroom name if invoice or quotation")
+    occupation: str = Field(default="", description="Occupation, driver/gig/business if stated")
+    detected_doc_type: str = Field(default="AADHAAR", description="Document type: AADHAAR, PAN, DEALER_INVOICE, BANK_STATEMENT, PLATFORM_EARNINGS, UTILITY_BILL")
+    pan: Optional[str] = Field(default=None, description="10-character PAN number if found")
+    aadhaar_last4: Optional[str] = Field(default=None, description="Aadhaar last 4 digits if found")
+    confidence: float = Field(default=0.88, description="Extraction confidence score from 0.0 to 1.0")
+    snippet: str = Field(default="", description="Verbatim text snippet from which the key applicant details were extracted")

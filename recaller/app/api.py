@@ -158,6 +158,12 @@ def build_router(service: UnderwritingService, request_log: RequestLog, started_
     async def create_application(body: CreateApplicationBody):
         return service.create_application(body.model_dump())
 
+    @r.post("/applications/extract-draft", tags=["applications"], summary="Scan document with PyMuPDF/OCR and extract draft application fields via Hermes")
+    async def extract_draft(file: UploadFile = File(...)):
+        limit = service.settings.max_upload_mb * 1024 * 1024
+        data = await file.read(limit + 1)
+        return await service.extract_application_draft(file.filename or "document", data, file.content_type)
+
     @r.get("/applications/{app_id}", tags=["applications"], summary="Header, documents, record, progress, replays, job, agent runs")
     async def get_application(app_id: str):
         return service.detail(app_id)

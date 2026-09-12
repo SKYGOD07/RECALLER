@@ -31,12 +31,13 @@ class ApiError extends Error {
 
 async function request(path, { method = 'GET', body, signal } = {}) {
   let res
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData
   try {
     res = await fetch(url(path), {
       method,
       signal,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined || isForm ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     })
   } catch (err) {
     throw new ApiError(`RECALLER runtime unreachable (${err.message})`, 0)
@@ -99,6 +100,18 @@ export function createHttpTransport() {
     getStagePlan: () => request('/api/stage-plan'),
     listApplications: () => request('/api/applications'),
     getApplication: (id) => request(`/api/applications/${id}`),
+    createApplication: (body) => request('/api/applications', { method: 'POST', body }),
+    uploadDocument: (id, type, file) => {
+      const form = new FormData()
+      form.append('type', type)
+      form.append('file', file)
+      return request(`/api/applications/${id}/documents`, { method: 'POST', body: form })
+    },
+    extractApplicationDraft: (file) => {
+      const form = new FormData()
+      form.append('file', file)
+      return request('/api/applications/extract-draft', { method: 'POST', body: form })
+    },
 
     startUnderwriting: (id, { paced = true, onStage } = {}) =>
       withStream(id, onStage, () =>

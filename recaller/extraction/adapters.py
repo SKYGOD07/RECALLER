@@ -6,6 +6,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from ..core.constants import DOC_TYPES, PROVENANCE
 from ..core.hash import hash_value, rng
+from .informant import attestation_quality, confidence_for, is_attested
 from .schema import EVIDENCE_SPEC, SPEC_BY_PATH, field, get_path, to_values
 
 
@@ -39,7 +40,7 @@ def base_confidence(spec: Dict[str, Any], value: Any, next_prng: Any) -> float:
 class FixtureAdapter:
     name = "fixture"
 
-    def extract(self, document: Dict[str, Any], seed: str) -> Dict[str, Any]:
+    def extract(self, document: Dict[str, Any], seed: str, policy: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         doc_id = document.get("id", "")
         next_prng = rng(f"{seed}:{doc_id}")
         payload = document.get("payload") or {}
@@ -48,6 +49,14 @@ class FixtureAdapter:
         out = {}
 
         doc_type = document.get("type")
+
+        # An informal-lender reference is not parsed out of a scan — it is a
+        # statement someone signed. Its confidence comes from how well that
+        # statement holds together, computed once for the whole reference.
+        quality = None
+        if doc_type == DOC_TYPES.INFORMANT_REFERENCE:
+            quality = attestation_quality(payload.get("informant") or {}, policy or {})
+
         for spec in EVIDENCE_SPEC:
             if spec.get("doc") == doc_type:
                 p = spec["path"]
@@ -55,11 +64,17 @@ class FixtureAdapter:
                 if val is None:
                     continue
                 forced = degrade.get(p)
-                conf = forced if forced is not None else base_confidence(spec, val, next_prng)
+                if forced is not None:
+                    conf = forced
+                elif quality is not None:
+                    conf = confidence_for(p, payload.get("informant") or {}, policy or {}, quality)
+                else:
+                    conf = base_confidence(spec, val, next_prng)
                 out[p] = field(
                     p,
                     val,
                     confidence=conf,
+                    provenance=PROVENANCE.INFORMANT if quality is not None else PROVENANCE.EXTRACTED,
                     citation={
                         "document": document.get("filename", ""),
                         "document_id": doc_id,
@@ -68,6 +83,14 @@ class FixtureAdapter:
                     },
                     raw=val if isinstance(val, str) else None,
                 )
+
+        if quality is not None and out:
+            # The scoring is part of the evidence, not a hidden step: every
+            # informant field carries the reference's quality breakdown so the
+            # console and the memo can show why the number is what it is.
+            for f in out.values():
+                f["attested"] = True
+                f["attestation"] = quality
         return out
 
 
@@ -89,11 +112,26 @@ def age_from(dob_iso: str, as_of_iso: Optional[str] = None) -> int:
         return 30
 
 
+def _call_adapter(adapter: Any, doc: Dict[str, Any], seed: str, policy: Dict[str, Any]) -> Any:
+    """Invoke an adapter, passing policy only to adapters that accept it.
+
+    Third-party adapters predate the informant reference and take two
+    arguments. Rather than break them, ask.
+    """
+    fn = adapter.extract if hasattr(adapter, "extract") else adapter
+    try:
+        takes_policy = "policy" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        takes_policy = False
+    return fn(doc, seed, policy) if takes_policy else fn(doc, seed)
+
+
 async def extract_bundle(
     documents: List[Dict[str, Any]],
     application: Dict[str, Any],
     adapter: Any = fixture_adapter,
     seed: Optional[str] = None,
+    policy: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run the extraction stage across a document bundle."""
     actual_seed = seed or application.get("id", "RECALLER")
@@ -101,10 +139,7 @@ async def extract_bundle(
     by_document = {}
 
     for doc in documents:
-        if hasattr(adapter, "extract"):
-            produced = adapter.extract(doc, actual_seed)
-        else:
-            produced = adapter(doc, actual_seed)
+        produced = _call_adapter(adapter, doc, actual_seed, policy or {})
         if inspect.isawaitable(produced):
             produced = await produced
         by_document[doc.get("id")] = list(produced.keys())
@@ -162,6 +197,12 @@ def apply_confidence_gate(fields: Dict[str, Any], policy: Dict[str, Any]) -> Dic
     conf_policy = policy.get("confidence", {})
     field_threshold = conf_policy.get("field_threshold", 0.80)
     critical_field_threshold = conf_policy.get("critical_field_threshold", 0.88)
+    # Attested evidence is structurally capped below the extraction floors — a
+    # signed statement can never score like a parsed document. Holding it to the
+    # same bar would route every informal-lender reference to a human and teach
+    # officers to rubber-stamp the queue. It gets its own, honestly lower, bar.
+    attested_threshold = conf_policy.get("attested_field_threshold", 0.55)
+    attested_critical_threshold = conf_policy.get("attested_critical_field_threshold", 0.66)
     critical_fields = conf_policy.get("critical_fields", [])
 
     held = []
@@ -170,7 +211,11 @@ def apply_confidence_gate(fields: Dict[str, Any], policy: Dict[str, Any]) -> Dic
             continue
         p = f.get("path")
         is_critical = p in critical_fields or f.get("critical", False)
-        floor = critical_field_threshold if is_critical else field_threshold
+        attested = is_attested(f)
+        if attested:
+            floor = attested_critical_threshold if is_critical else attested_threshold
+        else:
+            floor = critical_field_threshold if is_critical else field_threshold
         conf = f.get("confidence", 1.0)
         if conf < floor:
             held.append(
@@ -182,12 +227,9 @@ def apply_confidence_gate(fields: Dict[str, Any], policy: Dict[str, Any]) -> Dic
                     "confidence": conf,
                     "floor": floor,
                     "critical": is_critical,
+                    "attested": attested,
                     "citation": f.get("citation"),
-                    "reason": (
-                        "Critical field extracted below the strict confidence floor"
-                        if is_critical
-                        else "Extracted below the confidence floor"
-                    ),
+                    "reason": _hold_reason(attested, is_critical, f),
                     "status": "PENDING",
                 }
             )
@@ -201,11 +243,34 @@ def apply_confidence_gate(fields: Dict[str, Any], policy: Dict[str, Any]) -> Dic
         "thresholds": {
             "field_threshold": field_threshold,
             "critical_field_threshold": critical_field_threshold,
+            "attested_field_threshold": attested_threshold,
+            "attested_critical_field_threshold": attested_critical_threshold,
         },
     }
 
 
+def _hold_reason(attested: bool, is_critical: bool, f: Dict[str, Any]) -> str:
+    """Say why a field is in the queue, in terms the officer can act on."""
+    if attested:
+        problems = ((f.get("attestation") or {}).get("coherence") or {}).get("problems") or []
+        if problems:
+            return "Informant reference does not add up: " + problems[0].get("detail", "")
+        attestation = f.get("attestation") or {}
+        if not attestation.get("contact_verified", True):
+            return "Informant contact has not been verified by an officer"
+        return "Third-party attestation below the floor for attested evidence"
+    return (
+        "Critical field extracted below the strict confidence floor"
+        if is_critical
+        else "Extracted below the confidence floor"
+    )
+
+
 def coerce(value: Any, val_type: str) -> Any:
+    if val_type == "flag":
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().upper() in ("TRUE", "YES", "Y", "1", "VERIFIED")
     if val_type in ("money", "number"):
         try:
             cleaned = re.sub(r"[,\s₹]", "", str(value))
@@ -280,4 +345,22 @@ def apply_officer_resolutions(
 
 
 def materialise(fields: Dict[str, Any]) -> Dict[str, Any]:
-    return to_values(fields)
+    """Collapse the field map to the plain values the deterministic engines read.
+
+    One addition beyond a straight collapse: the attestation breakdown computed
+    for an informant reference travels with the values under ``_attestation``,
+    so reconciliation can explain a ledger that does not add up without
+    recomputing it. It is carried, never recalculated — the score the officer
+    saw in the queue is the score the finding cites.
+    """
+    values = to_values(fields)
+
+    attestation = None
+    for f in fields.values():
+        if isinstance(f, dict) and f.get("attestation"):
+            attestation = f["attestation"]
+            break
+    if attestation is not None and isinstance(values.get("informant"), dict):
+        values["informant"]["_attestation"] = attestation
+
+    return values

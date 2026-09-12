@@ -271,6 +271,94 @@ export function createEngineTransport() {
       }
     },
 
+    async createApplication(form) {
+      const year = new Date().getFullYear()
+      const seq = 500 + state.applications.size + 1
+      const id = `RCL-${year}-${String(seq).padStart(4, '0')}`
+      const ts = new Date().toISOString()
+      const app = {
+        id,
+        borrower_name: (form.borrower_name || 'New Applicant').trim(),
+        segment: form.segment || 'EV_2W',
+        loan_amount: Number(form.loan_amount) || 95000,
+        tenure_months: Number(form.tenure_months) || 36,
+        declared_monthly_income: Number(form.declared_monthly_income) || 32000,
+        branch: form.branch || 'Delhi — Karol Bagh',
+        officer: form.officer || 'Console Officer',
+        dealer: form.dealer || 'Volt Mobility, Karol Bagh',
+        occupation: form.occupation || 'Gig worker',
+        created_at: ts,
+        updated_at: ts,
+        status: APP_STATUS.DRAFT,
+        decision: null,
+        custom: true,
+        document_count: 0,
+      }
+      state.applications.set(id, app)
+      state.bundles.set(id, [])
+      persist(state)
+      return app
+    },
+
+    async uploadDocument(id, type, file) {
+      const app = state.applications.get(id)
+      if (!app) throw new Error(`Application ${id} not found`)
+      const docs = state.bundles.get(id) ?? []
+      const docId = `${id}-${type}-${Math.random().toString(36).slice(2, 7)}`
+      const newDoc = {
+        id: docId,
+        app_id: id,
+        type,
+        filename: file?.name || `${type.toLowerCase()}.pdf`,
+        source: 'upload',
+        media_type: file?.type || 'application/pdf',
+        pages: 1,
+        size_kb: Math.round(((file?.size || 1024) / 1024) * 10) / 10,
+        uploaded_at: new Date().toISOString(),
+      }
+      state.bundles.set(id, [...docs.filter((d) => d.type !== type), newDoc])
+      app.document_count = (state.bundles.get(id) ?? []).length
+      state.applications.set(id, { ...app })
+      persist(state)
+      return newDoc
+    },
+
+    async extractApplicationDraft(file) {
+      let text = ''
+      try {
+        if (file && typeof file.text === 'function') {
+          text = await file.text()
+        }
+      } catch {
+        text = ''
+      }
+      const fn = file?.name || 'document.pdf'
+      const is3w = /cargo|loader|passenger|rickshaw|auto/i.test(fn + text)
+      const isCargo = /cargo|loader/i.test(fn + text)
+      return {
+        success: true,
+        filename: fn,
+        media_type: file?.type || 'application/pdf',
+        page_count: 1,
+        ocr_used: false,
+        scanned: false,
+        text_preview: text.slice(0, 300) || `Scanned document: ${fn}`,
+        extracted_fields: {
+          borrower_name: fn.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || 'New Applicant',
+          segment: isCargo ? 'EV_3W_CARGO' : is3w ? 'EV_3W_PASSENGER' : 'EV_2W',
+          loan_amount: is3w ? 220000 : 95000,
+          tenure_months: 36,
+          declared_monthly_income: is3w ? 42000 : 32000,
+          branch: 'Delhi — Karol Bagh',
+          dealer: 'Volt Mobility, Karol Bagh',
+          occupation: isCargo ? 'Last-mile delivery' : is3w ? 'E-rickshaw operator' : 'Ride-hailing driver',
+          detected_doc_type: /pan/i.test(fn) ? 'PAN' : /aadhaar/i.test(fn) ? 'AADHAAR' : 'DEALER_INVOICE',
+          confidence: 0.9,
+          snippet: `Extracted from ${fn}`,
+        },
+      }
+    },
+
     async startUnderwriting(id, { paced = true, onStage } = {}) {
       const header = state.applications.get(id)
       const documents = state.bundles.get(id)

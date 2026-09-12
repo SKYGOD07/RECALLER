@@ -37,6 +37,7 @@ STAGE_PLAN = [
     {"id": "BANK", "label": "Bank statement extraction", "stage": "BANK_EXTRACTION", "actor": ACTORS.LLM},
     {"id": "PLATFORM", "label": "Platform earnings extraction", "stage": "PLATFORM_EXTRACTION", "actor": ACTORS.LLM},
     {"id": "INVOICE", "label": "Invoice extraction", "stage": "INVOICE_EXTRACTION", "actor": ACTORS.LLM},
+    {"id": "INFORMANT", "label": "Informal-lender reference", "stage": "INFORMANT_ATTESTATION", "actor": ACTORS.ENGINE},
     {"id": "VALIDATE", "label": "Evidence validation", "stage": "EVIDENCE_VALIDATION", "actor": ACTORS.ENGINE},
     {"id": "RECONCILE", "label": "Reconciliation", "stage": "RECONCILIATION", "actor": ACTORS.ENGINE},
     {"id": "GATE", "label": "Confidence gate", "stage": "CONFIDENCE_GATE", "actor": ACTORS.ENGINE},
@@ -185,6 +186,7 @@ async def run_underwriting(
         application=application,
         adapter=adapter,
         seed=application.get("id"),
+        policy=policy,
     )
 
     groups = [
@@ -192,6 +194,7 @@ async def run_underwriting(
         ("BANK", ["BANK_STATEMENT"]),
         ("PLATFORM", ["PLATFORM_EARNINGS"]),
         ("INVOICE", ["DEALER_INVOICE"]),
+        ("INFORMANT", ["INFORMANT_REFERENCE"]),
     ]
 
     for plan_id, types in groups:
@@ -356,6 +359,7 @@ async def run_underwriting(
                     "BANK",
                     "PLATFORM",
                     "INVOICE",
+                    "INFORMANT",
                     "VALIDATE",
                     "RECONCILE",
                     "GATE",
