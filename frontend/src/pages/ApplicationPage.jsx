@@ -22,6 +22,7 @@ import EvidenceStrength from '@/components/decision/EvidenceStrength.jsx'
 import PolicyLedger from '@/components/decision/PolicyLedger.jsx'
 import RunPanel from '@/components/decision/RunPanel.jsx'
 import EvidenceGrid from '@/components/evidence/EvidenceGrid.jsx'
+import Informant from '@/components/evidence/Informant.jsx'
 import Reconciliation from '@/components/reconciliation/Reconciliation.jsx'
 import WhatIf from '@/components/whatif/WhatIf.jsx'
 import { useApplicationDetail } from '@/hooks/console'
@@ -192,10 +193,13 @@ export default function ApplicationPage({ id, tab }) {
   if (tab === 'evidence') {
     body = gate(
       record?.evidence ? (
-        <EvidenceGrid
-          evidence={record.evidence}
-          thresholds={record.assist?.thresholds ?? state.policy?.confidence ?? {}}
-        />
+        <>
+          <EvidenceGrid
+            evidence={record.evidence}
+            thresholds={record.assist?.thresholds ?? state.policy?.confidence ?? {}}
+          />
+          <Informant values={record.evidence.values} credit={record.credit} />
+        </>
       ) : null,
     )
   } else if (tab === 'reconciliation') {

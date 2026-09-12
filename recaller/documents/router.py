@@ -1,6 +1,7 @@
 """Extraction routing — which reader handles which document.
 
-  synthetic document (has a payload)   → fixture adapter (deterministic demo data)
+  document carrying a payload          → fixture adapter (demo data, or an
+                                         attested informal-lender reference)
   uploaded, text layer, model enabled  → Hermes evidence agent, gaps filled by patterns
   uploaded, text layer, no model       → pattern extractor
   uploaded, no text (scanned, no OCR)  → nothing read
@@ -26,12 +27,19 @@ class RoutedExtractionAdapter:
         self.routes: Dict[str, Dict[str, Any]] = {}
         self.name = "routed"
 
-    async def extract(self, document: Dict[str, Any], seed: Optional[str] = None) -> Dict[str, Any]:
+    async def extract(
+        self,
+        document: Dict[str, Any],
+        seed: Optional[str] = None,
+        policy: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         doc_id = str(document.get("id"))
         info: Dict[str, Any] = {"document": document.get("filename"), "type": document.get("type")}
 
         if document.get("payload") is not None:
-            out = fixture_adapter.extract(document, seed or "")
+            # Policy travels with the call so attested evidence is scored against
+            # the ceilings the run will actually enforce, not the module defaults.
+            out = fixture_adapter.extract(document, seed or "", policy or {})
             info["route"] = "fixture"
         else:
             pages = document.get("_pages_text") or []

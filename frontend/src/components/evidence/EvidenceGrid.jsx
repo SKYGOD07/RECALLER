@@ -13,6 +13,7 @@ const GROUPS = [
   { prefix: 'bank', label: 'Bank', hint: 'Statement' },
   { prefix: 'platform', label: 'Platform', hint: 'Settlement earnings' },
   { prefix: 'invoice', label: 'Invoice', hint: 'Dealer' },
+  { prefix: 'informant', label: 'Informant', hint: 'Informal-lender reference' },
 ]
 
 const PROVENANCE_KIND = {
@@ -21,11 +22,28 @@ const PROVENANCE_KIND = {
   COMPUTED: 'engine',
   POLICY: 'idle',
   DECLARED: 'idle',
+  INFORMANT: 'refer',
+}
+
+/**
+ * Attested evidence answers to its own floors. Scoring it against the
+ * extraction floors would paint every sound informal-lender reference red,
+ * because a signed statement is capped below those floors by construction —
+ * the officer would learn to ignore the colour.
+ */
+function floorFor(f, thresholds) {
+  const attested = f.provenance === 'INFORMANT' || f.attested
+  if (attested) {
+    return f.critical
+      ? (thresholds.attested_critical_field_threshold ?? 0.66)
+      : (thresholds.attested_field_threshold ?? 0.5)
+  }
+  return f.critical ? thresholds.critical_field_threshold : thresholds.field_threshold
 }
 
 function confidenceKind(f, thresholds) {
-  const floor = f.critical ? thresholds.critical_field_threshold : thresholds.field_threshold
   if (f.provenance === 'OFFICER') return 'approve'
+  const floor = floorFor(f, thresholds)
   return f.confidence < floor ? 'reject' : f.confidence < floor + 0.08 ? 'refer' : 'approve'
 }
 
@@ -95,7 +113,11 @@ export default function EvidenceGrid({ evidence, thresholds }) {
                   ))}
                 </ul>
               ) : (
-                <p className="egroup__empty">No document of this type was supplied.</p>
+                <p className="egroup__empty">
+                  {g.prefix === 'informant'
+                    ? 'No informal-lender reference was recorded for this borrower.'
+                    : 'No document of this type was supplied.'}
+                </p>
               )}
             </section>
           )

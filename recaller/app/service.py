@@ -494,9 +494,15 @@ class UnderwritingService:
         for d in self.db.list_documents(app_id):
             base = {"id": d["id"], "type": d["type"], "filename": d["filename"], "pages": d.get("page_count"),
                     "size_kb": self.public_document(d)["size_kb"], "uploaded_at": d.get("uploaded_at")}
-            if d["source"] == "synthetic":
-                meta = d.get("meta") or {}
+            meta = d.get("meta") or {}
+            # Structured payload wins over page text wherever one exists. Keying
+            # this on source == "synthetic" meant an informal-lender reference —
+            # which is a typed statement, not a scan, and so is stored as a
+            # payload under its own source — fell through to the text branch and
+            # was read as an empty document.
+            if meta.get("payload") is not None:
                 base.update(payload=meta.get("payload"), degrade=meta.get("degrade") or {}, pageMap=meta.get("pageMap") or {})
+                base["source"] = d["source"]
             else:
                 base["_pages_text"] = self.db.get_document_text(d["id"]) or []
                 base["source"] = "upload"

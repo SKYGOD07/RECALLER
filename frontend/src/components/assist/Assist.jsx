@@ -87,6 +87,19 @@ function HeldField({ field, resolution, onChange }) {
   )
 }
 
+/**
+ * Held fields no longer share one floor: attested evidence answers to its own,
+ * lower bar. Quoting a single number here would contradict the floor printed on
+ * each card, so the header names the range that is actually in play.
+ */
+function floorSummary(queue) {
+  const count = `${num(queue.length)} field${queue.length === 1 ? '' : 's'} held`
+  const floors = [...new Set(queue.map((q) => q.floor))].filter((f) => f != null).sort((a, b) => a - b)
+  if (!floors.length) return count
+  if (floors.length === 1) return `${count} · floor ${pct(floors[0], 0)}`
+  return `${count} · floors ${pct(floors[0], 0)}–${pct(floors[floors.length - 1], 0)}`
+}
+
 export default function Assist({ record, busy, onResume }) {
   const assist = record.assist ?? {}
   const queue = assist.queue ?? []
@@ -134,7 +147,7 @@ export default function Assist({ record, busy, onResume }) {
   return (
     <Panel
       title="Execution suspended"
-      meta={`${num(queue.length)} fields held · floor ${pct(assist.thresholds?.critical_field_threshold, 0)} critical`}
+      meta={floorSummary(queue)}
       action={
         <CButton onClick={submit} disabled={!ready || busy}>
           {busy ? 'Resuming…' : `Confirm and resume (${num(queue.length - pending.length)}/${num(queue.length)})`}

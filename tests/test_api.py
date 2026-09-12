@@ -229,6 +229,126 @@ def scripted_reviewer(req):
     return {"content": json.dumps({"findings": [{"area": area, "severity": "INFO", "title": f"{area} consistent", "detail": "No contradiction found.", "evidence_paths": ["applicant.name"]}], "summary": "ok"})}
 
 
+class TestInformantReference(ApiCase):
+    """The route a field officer uses while the informal lender is still there."""
+
+    COHERENT = {
+        "name": "Suresh Kumar Gupta",
+        "relationship": "SHOPKEEPER_CREDIT",
+        "business_name": "Gupta General Store",
+        "contact": "98XXXXXX07",
+        "contact_verified": True,
+        "borrower_known_as": "Asha Verma",
+        "months_known": 34,
+        "principal_lent": 45000,
+        "current_outstanding": 12000,
+        "monthly_repayment": 3000,
+        "missed_payments_12m": 1,
+        "attested_at": "2026-08-28",
+    }
+
+    def _app(self):
+        created = self.client.post("/api/applications", json=FORM)
+        self.assertEqual(created.status_code, 201)
+        return created.json()["id"]
+
+    def test_a_sound_reference_is_accepted_and_scored(self):
+        app_id = self._app()
+        r = self.client.post(f"/api/applications/{app_id}/informant", json=self.COHERENT)
+        self.assertEqual(r.status_code, 201, r.text)
+        body = r.json()
+
+        self.assertEqual(body["document"]["type"], "INFORMANT_REFERENCE")
+        self.assertEqual(body["problems"], [])
+        self.assertFalse(body["will_be_held_for_officer"])
+        # Scored against the live policy, capped as attested evidence.
+        self.assertLessEqual(
+            body["attestation"]["ledger_confidence"], body["attestation"]["ceiling"]
+        )
+        self.assertEqual(body["attestation"]["coherence"]["score"], 1.0)
+
+    def test_a_reference_that_does_not_add_up_says_so_immediately(self):
+        app_id = self._app()
+        r = self.client.post(
+            f"/api/applications/{app_id}/informant",
+            json={
+                **self.COHERENT,
+                "principal_lent": 60000,
+                "current_outstanding": 0,
+                "monthly_repayment": 4000,
+                "months_known": 9,
+                "contact_verified": False,
+            },
+        )
+        self.assertEqual(r.status_code, 201, r.text)
+        body = r.json()
+        self.assertTrue(body["will_be_held_for_officer"])
+        codes = [p["code"] for p in body["problems"]]
+        self.assertIn("REPAYMENT_EXCEEDS_RELATIONSHIP", codes)
+        # The officer is told the contradiction, not just given a low number.
+        self.assertIn("months", body["problems"][0]["detail"])
+
+    def test_an_unnamed_informant_is_refused(self):
+        app_id = self._app()
+        r = self.client.post(f"/api/applications/{app_id}/informant", json={"name": ""})
+        self.assertEqual(r.status_code, 422)
+
+    def test_an_unknown_relationship_is_refused_with_the_allowed_set(self):
+        app_id = self._app()
+        r = self.client.post(
+            f"/api/applications/{app_id}/informant",
+            json={**self.COHERENT, "relationship": "LOAN_SHARK"},
+        )
+        self.assertEqual(r.status_code, 422)
+        self.assertIn("allowed", json.dumps(r.json()))
+
+    def test_the_reference_reaches_the_underwriting_run(self):
+        app_id = self._app()
+        for doc_type, text in DOCS.items():
+            self.client.post(
+                f"/api/applications/{app_id}/documents",
+                data={"type": doc_type},
+                files={"file": (f"{doc_type.lower()}.pdf", pdf(text), "application/pdf")},
+            )
+        self.client.post(f"/api/applications/{app_id}/informant", json=self.COHERENT)
+
+        r = self.client.post(f"/api/applications/{app_id}/underwrite", json={"paced": False})
+        self.assertEqual(r.status_code, 200, r.text)
+        record = r.json()
+        if record.get("status") == "WAITING_FOR_OFFICER":
+            r = self.client.post(
+                f"/api/applications/{app_id}/resume",
+                json={
+                    "paced": False,
+                    "resolutions": [
+                        {"path": q["path"], "action": "CONFIRM", "by": "officer"}
+                        for q in record["assist"]["queue"]
+                    ],
+                },
+            )
+            record = r.json()
+
+        # The reference is live evidence: it is extracted, scored and it moved
+        # the obligation total, because no bank debit matched it.
+        fields = record["evidence"]["fields"]
+        self.assertIn("informant.monthly_repayment", fields)
+        self.assertEqual(fields["informant.monthly_repayment"]["provenance"], "INFORMANT")
+        self.assertEqual(record["credit"]["metrics"]["informal_obligation_added"], 3000.0)
+        codes = [f["code"] for f in record["reconciliation"]["findings"]]
+        self.assertIn("RC-INF-01", codes)
+
+    def test_replacing_a_reference_does_not_leave_two(self):
+        app_id = self._app()
+        self.client.post(f"/api/applications/{app_id}/informant", json=self.COHERENT)
+        self.client.post(
+            f"/api/applications/{app_id}/informant",
+            json={**self.COHERENT, "name": "Someone Else"},
+        )
+        detail = self.client.get(f"/api/applications/{app_id}").json()
+        refs = [d for d in detail["documents"] if d["type"] == "INFORMANT_REFERENCE"]
+        self.assertEqual(len(refs), 1)
+
+
 class TestAgentsWithScriptedModel(ApiCase):
     provider = ScriptedProvider([scripted_reviewer])
 
