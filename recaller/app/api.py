@@ -38,6 +38,31 @@ class SampleBody(BaseModel):
     type: str
 
 
+class InformantReferenceBody(BaseModel):
+    """What a named third party who has lent to this borrower states.
+
+    Everything past the name is optional: a reference given over a counter is
+    rarely complete, and completeness is one of the things the confidence model
+    measures rather than demands.
+    """
+
+    name: str = Field(min_length=1, max_length=160)
+    relationship: Optional[str] = Field(default=None, max_length=40)
+    business_name: Optional[str] = Field(default=None, max_length=160)
+    contact: Optional[str] = Field(default=None, max_length=40)
+    contact_verified: bool = False
+    borrower_known_as: Optional[str] = Field(default=None, max_length=160)
+    months_known: Optional[int] = Field(default=None, ge=0, le=1200)
+    principal_lent: Optional[float] = Field(default=None, ge=0)
+    current_outstanding: Optional[float] = Field(default=None, ge=0)
+    monthly_repayment: Optional[float] = Field(default=None, ge=0)
+    missed_payments_12m: Optional[int] = Field(default=None, ge=0, le=120)
+    longest_delay_days: Optional[int] = Field(default=None, ge=0, le=3650)
+    would_lend_again: Optional[bool] = None
+    attested_at: Optional[str] = Field(default=None, max_length=40)
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
 class UnderwriteBody(BaseModel):
     paced: bool = True
 
@@ -184,6 +209,15 @@ def build_router(service: UnderwritingService, request_log: RequestLog, started_
     @r.post("/applications/{app_id}/documents/sample", tags=["documents"], status_code=201, summary="Attach a synthetic sample document")
     async def attach_sample(app_id: str, body: SampleBody):
         return service.add_sample_document(app_id, body.type)
+
+    @r.post(
+        "/applications/{app_id}/informant",
+        tags=["documents"],
+        status_code=201,
+        summary="Record an informal-lender reference and score it on the spot",
+    )
+    async def informant_reference(app_id: str, body: InformantReferenceBody):
+        return service.add_informant_reference(app_id, body.model_dump())
 
     @r.delete("/applications/{app_id}/documents/{doc_id}", tags=["documents"], status_code=204)
     async def remove_document(app_id: str, doc_id: str):

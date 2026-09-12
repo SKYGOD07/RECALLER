@@ -351,6 +351,80 @@ class UnderwritingService:
         self._after_documents_changed(app_id)
         return self.public_document(self.db.get_document(row["id"]))
 
+    def add_informant_reference(self, app_id: str, reference: Dict[str, Any]) -> Dict[str, Any]:
+        """Record what a named third party says they lent this borrower.
+
+        This is the one evidence type nobody uploads a scan for. A shopkeeper who
+        has carried a tailoring unit on credit for four years has no statement to
+        produce; what they have is testimony, and the point of this route is to
+        take it down in a typed, scored, sourced form instead of losing it.
+
+        The reference is stored exactly like any other document payload, so it
+        flows through extraction, the confidence gate and reconciliation on the
+        same rails as a bank statement. It is scored here as well, and returned,
+        so whoever is taking the statement learns immediately whether it hangs
+        together — while the informant is still in front of them.
+        """
+        self.require_app(app_id)
+        self._guard_idle(app_id)
+
+        informant = {k: v for k, v in (reference or {}).items() if v is not None}
+        if not informant.get("name"):
+            raise ServiceError(422, "INFORMANT_UNNAMED", "An informal-lender reference must name the informant.")
+
+        relationship = str(informant.get("relationship") or "").strip().upper()
+        if relationship and relationship not in INFORMANT_RELATIONSHIP.ALL:
+            raise ServiceError(
+                422,
+                "UNKNOWN_RELATIONSHIP",
+                f"Unknown lending relationship {relationship}.",
+                {"allowed": sorted(INFORMANT_RELATIONSHIP.ALL)},
+            )
+        if relationship:
+            informant["relationship"] = relationship
+
+        for key in ("principal_lent", "current_outstanding", "monthly_repayment"):
+            if informant.get(key) is not None and float(informant[key]) < 0:
+                raise ServiceError(422, "NEGATIVE_AMOUNT", f"{key} cannot be negative.")
+
+        doc_type = DOC_TYPES.INFORMANT_REFERENCE
+        self._replace_same_type(app_id, doc_type)
+        row = self._synthetic_row(
+            app_id,
+            {
+                "id": f"{app_id}-{doc_type}",
+                "type": doc_type,
+                "filename": "InformantReference.pdf",
+                "pages": 2,
+                "size_kb": 198,
+                "payload": {"informant": informant},
+                "degrade": None,
+                "pageMap": PAGES.get(doc_type, {}),
+                "uploaded_at": now_iso(),
+            },
+            doc_id=f"{app_id}-{doc_type}",
+        )
+        row["source"] = "attested"
+        self.db.add_document(row)
+        self._after_documents_changed(app_id)
+
+        # Scored with the live policy, so the floors quoted back are the floors
+        # the run will actually apply.
+        quality = attestation_quality(informant, self.policy)
+        conf = self.policy.get("confidence", {})
+        floors = {
+            "attested_field_threshold": conf.get("attested_field_threshold"),
+            "attested_critical_field_threshold": conf.get("attested_critical_field_threshold"),
+        }
+        critical_floor = floors["attested_critical_field_threshold"] or 0
+        return {
+            "document": self.public_document(self.db.get_document(row["id"])),
+            "attestation": quality,
+            "thresholds": floors,
+            "will_be_held_for_officer": quality["ledger_confidence"] < critical_floor,
+            "problems": quality["coherence"]["problems"],
+        }
+
     def add_upload(self, app_id: str, doc_type: str, filename: str, data: bytes, content_type: Optional[str]) -> Dict[str, Any]:
         self.require_app(app_id)
         self._guard_idle(app_id)
