@@ -5,6 +5,10 @@
   "type": "module",
   "description": "RECALLER — AI agentic credit underwriter for thin-file green borrowers.",
   "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "dev:app": "npm --prefix app run dev",
+    "dev:site": "npm --prefix frontend run dev",
+    "dev:backend": "python -m recaller.cli serve --reload",
     "app": "npm --prefix app run dev",
     "app:build": "npm --prefix app run build",
     "app:start": "npm --prefix app run start",
@@ -12,10 +16,9 @@
     "site:build": "npm --prefix frontend run build",
     "verify": "node scripts/verify-pipeline.mjs",
     "verify:verbose": "node scripts/verify-pipeline.mjs --verbose",
-    "test": "node scripts/test-engine.mjs",
-    "test:agent": "node scripts/test-agent.mjs",
-    "check": "npm run test && npm run test:agent && npm run verify",
-    "install:all": "npm --prefix app install && npm --prefix frontend install"
+    "test": "python -m recaller.cli test",
+    "check": "python -m unittest discover -s tests -p \"test_*.py\"",
+    "install:all": "npm --prefix app install && npm --prefix frontend install && pip install -e \".[dev]\""
   },
   "engines": {
     "node": ">=20.0.0"
