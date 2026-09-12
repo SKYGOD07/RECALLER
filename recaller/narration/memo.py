@@ -50,6 +50,70 @@ def income_narrative(credit: Dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+def informant_narrative(record: Dict[str, Any]) -> str:
+    """Say what the informal-lender reference contributed, in the engine numbers.
+
+    Every figure here is read from the deterministic result. The section exists
+    because a reader of this memo is entitled to know that part of the
+    obligation total came from somebody attesting to it rather than from a
+    statement, and to know exactly how much.
+    """
+    values = (record.get("evidence") or {}).get("values") or {}
+    informant = values.get("informant") or {}
+    if not informant:
+        return ""
+
+    credit = record.get("credit") or {}
+    informal = credit.get("informal_credit") or {}
+    quality = informant.get("_attestation") or {}
+
+    who = informant.get("business_name") or informant.get("name") or "an informal lender"
+    months = informant.get("months_known")
+    missed = informant.get("missed_payments_12m")
+
+    parts = []
+    rel = str(informant.get("relationship") or "").replace("_", " ").lower()
+    lead = f"{who} attests to a {rel} relationship with the applicant"
+    if months is not None:
+        lead += f" running {int(float(months))} months"
+    parts.append(lead + ".")
+
+    if missed is not None:
+        if float(missed) == 0:
+            parts.append("No missed payments were reported over the last twelve months.")
+        else:
+            parts.append(
+                f"{int(float(missed))} missed payment(s) were reported over the last twelve months."
+            )
+
+    if informal.get("applicable"):
+        monthly = format_inr(informal.get("monthly_repayment"), decimals=2)
+        if informal.get("corroborated"):
+            matched = (informal.get("matched_debit") or {}).get("label") or "a recurring debit"
+            parts.append(
+                f"The stated repayment of {monthly} per month matches {matched} in the bank "
+                "statement, so it is counted once in the obligation total and not twice."
+            )
+        elif (informal.get("added") or 0) > 0:
+            parts.append(
+                f"No bank debit corresponds to the stated repayment of {monthly} per month, so "
+                f"the engine added {format_inr(informal.get('added'), decimals=2)} to existing "
+                "obligations. This tightens the assessment; it does not relax it."
+            )
+    else:
+        parts.append("The informal loan is settled, so it adds no obligation to this assessment.")
+
+    ceiling = quality.get("ceiling")
+    if ceiling is not None:
+        parts.append(
+            f"Confidence on this evidence is capped at {float(ceiling):.2f} because it is a "
+            "third-party attestation rather than a document. It cannot raise recognised "
+            "income or relax a policy limit."
+        )
+
+    return " ".join(parts)
+
+
 def reconciliation_narrative(rec: Dict[str, Any]) -> str:
     blocking = rec.get("blocking", 0)
     advisory = rec.get("advisory", 0)
@@ -217,6 +281,19 @@ def build_credit_memo(record: Dict[str, Any]) -> Dict[str, Any]:
             ],
         }
     )
+
+    # Informal-lender reference, when one was supplied
+    informant_body = informant_narrative(record)
+    if informant_body:
+        sections.append(
+            {
+                "id": "informant",
+                "title": "Informal-lender reference",
+                "kind": "prose",
+                "note": "Third-party attestation. Contributes obligations and repayment conduct only.",
+                "body": informant_body,
+            }
+        )
 
     # Reconciliation
     sections.append(

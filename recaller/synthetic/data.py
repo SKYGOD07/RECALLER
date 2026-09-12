@@ -32,6 +32,23 @@ PAGES = {
         "platform.active_months": 1,
         "platform.rating": 1,
     },
+    "INFORMANT_REFERENCE": {
+        "informant.name": 1,
+        "informant.relationship": 1,
+        "informant.business_name": 1,
+        "informant.contact": 1,
+        "informant.contact_verified": 1,
+        "informant.borrower_known_as": 1,
+        "informant.months_known": 1,
+        "informant.principal_lent": 2,
+        "informant.current_outstanding": 2,
+        "informant.monthly_repayment": 2,
+        "informant.missed_payments_12m": 2,
+        "informant.longest_delay_days": 2,
+        "informant.would_lend_again": 2,
+        "informant.attested_at": 2,
+        "informant.note": 2,
+    },
     "DEALER_INVOICE": {
         "invoice.dealer_name": 1,
         "invoice.invoice_number": 1,
@@ -77,6 +94,7 @@ def bundle(
     bank: Dict[str, Any],
     invoice: Dict[str, Any],
     platform: Optional[Dict[str, Any]] = None,
+    informant: Optional[Dict[str, Any]] = None,
     degrade: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     deg = degrade or {}
@@ -91,6 +109,10 @@ def bundle(
         docs.insert(
             3,
             doc(app_id, "PLATFORM_EARNINGS", f"{provider}Earnings.pdf", {"platform": platform}, pages=3, degrade=deg.get("PLATFORM_EARNINGS"), size_kb=522),
+        )
+    if informant:
+        docs.append(
+            doc(app_id, "INFORMANT_REFERENCE", "InformantReference.pdf", {"informant": informant}, pages=2, degrade=deg.get("INFORMANT_REFERENCE"), size_kb=198),
         )
     return docs
 
@@ -141,6 +163,26 @@ A1 = {
             "monthly_net": [32800, 34200, 33100, 32200, 34700, 33600],
             "active_months": 22,
             "rating": 4.7,
+        },
+        # A cleared informal loan. It adds no obligation — there is nothing left
+        # to pay — but it is three and a half years of repayment record that no
+        # bureau ever saw, which is the whole point of asking.
+        informant={
+            "name": "Suresh Kumar Gupta",
+            "relationship": "SHOPKEEPER_CREDIT",
+            "business_name": "Gupta General Store, Bapa Nagar",
+            "contact": "98XXXXXX07",
+            "contact_verified": True,
+            "borrower_known_as": "Rahul Sharma",
+            "months_known": 41,
+            "principal_lent": 38000,
+            "current_outstanding": 0,
+            "monthly_repayment": 0,
+            "missed_payments_12m": 0,
+            "longest_delay_days": 4,
+            "would_lend_again": True,
+            "attested_at": "2026-08-29",
+            "note": "Goods advanced on running account since 2023. Cleared in full in June.",
         },
         invoice={
             "dealer_name": "Volt Mobility Pvt Ltd, Karol Bagh",
@@ -197,6 +239,27 @@ A2 = {
             "recurring_debits": [
                 {"label": "Self-help group instalment", "amount": 1800, "kind": "GROUP_LOAN", "source": "Recurring debit, 10th of month"}
             ],
+        },
+        # The numbers in this reference do not describe one loan: 60,000 repaid
+        # at 4,000 a month is fifteen months of repayment inside a relationship
+        # stated as nine. Confidence falls below the attested floor and the
+        # field joins the officer queue rather than silently moving FOIR.
+        informant={
+            "name": "Ram Prasad Sah",
+            "relationship": "INFORMAL_LENDER",
+            "business_name": "Sah Finance, Kankarbagh",
+            "contact": "94XXXXXX61",
+            "contact_verified": False,
+            "borrower_known_as": "Meena Devi",
+            "months_known": 9,
+            "principal_lent": 60000,
+            "current_outstanding": 0,
+            "monthly_repayment": 4000,
+            "missed_payments_12m": 0,
+            "longest_delay_days": 0,
+            "would_lend_again": True,
+            "attested_at": "2026-08-30",
+            "note": "Stated as fully repaid.",
         },
         invoice={
             "dealer_name": "Ganga Auto Sales, Kankarbagh",
@@ -447,6 +510,27 @@ A6 = {
             "average_monthly_balance": 5200,
             "bounce_count": 0,
             "recurring_debits": [],
+        },
+        # The file that most needs this. Four months of bank history and no
+        # platform record — but a four-year running account with her cloth
+        # supplier, repaid in cash, which is why the bank statement shows
+        # nothing. The engine adds the obligation the statement never carried.
+        informant={
+            "name": "Abdul Rashid Ansari",
+            "relationship": "SHOPKEEPER_CREDIT",
+            "business_name": "Ansari Cloth House, Nazirabad",
+            "contact": "89XXXXXX43",
+            "contact_verified": True,
+            "borrower_known_as": "Farida Begum",
+            "months_known": 48,
+            "principal_lent": 84000,
+            "current_outstanding": 19600,
+            "monthly_repayment": 2800,
+            "missed_payments_12m": 1,
+            "longest_delay_days": 11,
+            "would_lend_again": True,
+            "attested_at": "2026-09-01",
+            "note": "Fabric supplied on credit for the tailoring unit since 2022. Settled in cash each month.",
         },
         invoice={
             "dealer_name": "Awadh EV Showroom, Aminabad",
