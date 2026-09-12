@@ -249,7 +249,197 @@ export function reconcile({ evidence, loanRequest, creditMetrics, policy }) {
     })
   }
 
+  // 9..13 — informal-lender reference
+  findings.push(
+    ...informantFindings({
+      informant: evidence.informant || {},
+      applicant,
+      creditMetrics,
+      policy,
+    })
+  )
+
   return summarise(findings)
+}
+
+/**
+ * Cross-check what the informal lender said against what the file shows.
+ *
+ * The reference is the only evidence in the bundle nobody had to produce a
+ * document for, so it gets the most scrutiny — and it is also the only evidence
+ * that can reveal an obligation the bank statement never carried.
+ */
+export function informantFindings({ informant, applicant, creditMetrics, policy }) {
+  if (!informant || !Object.keys(informant).length) return []
+
+  const tol = policy.reconciliation || {}
+  const cfg = policy.informal_credit || {}
+  const informal = creditMetrics.informal_credit || {}
+  const findings = []
+
+  // 9 — Does the monthly repayment appear in the bank statement?
+  if (informal.applicable) {
+    const corroborated = Boolean(informal.corroborated)
+    const matched = informal.matched_debit || null
+    const monthly = informal.monthly_repayment || 0
+    findings.push({
+      code: 'RC-INF-01',
+      label: 'Informal repayment vs bank recurring debits',
+      status: corroborated ? FINDING_STATUS.MATCHED : FINDING_STATUS.ADVISORY,
+      severity: corroborated ? 'INFO' : 'ADVISORY',
+      comparison: {
+        left: {
+          field: 'Repayment stated by informant',
+          value: roundHalfUp(monthly, 2),
+          source: 'InformantReference.pdf',
+          kind: 'money',
+        },
+        right: {
+          field: (matched && matched.label) || 'No matching recurring debit',
+          value: matched ? roundHalfUp(matched.amount, 2) : 0,
+          source: 'BankStatement.pdf',
+          kind: 'money',
+        },
+      },
+      tolerance: { match_pct: informal.tolerance_pct },
+      evidence: ['informant.monthly_repayment', 'bank.recurring_debits'],
+      note: corroborated
+        ? 'The informal repayment is already visible in the statement and is counted once.'
+        : 'No bank debit matches this repayment, so the obligation was not in the file. The engine has added it to the obligation total.',
+      resolution: null,
+    })
+  }
+
+  // 10 — Does the informant ledger add up against itself?
+  const attestation = informant._attestation || {}
+  const coherence = attestation.coherence || {}
+  const problems = coherence.problems || []
+  if (coherence.checkable) {
+    findings.push({
+      code: 'RC-INF-02',
+      label: 'Informant ledger internal consistency',
+      status: problems.length ? FINDING_STATUS.ADVISORY : FINDING_STATUS.MATCHED,
+      severity: problems.length ? 'ADVISORY' : 'INFO',
+      comparison: {
+        left: {
+          field: 'Implied months of repayment',
+          value: coherence.implied_months_repaid,
+          source: 'Derived from informant figures',
+          kind: 'number',
+        },
+        right: {
+          field: 'Stated months of relationship',
+          value: informant.months_known,
+          source: 'InformantReference.pdf',
+          kind: 'number',
+        },
+      },
+      tolerance: { score: coherence.score },
+      evidence: [
+        'informant.principal_lent',
+        'informant.current_outstanding',
+        'informant.monthly_repayment',
+        'informant.months_known',
+      ],
+      note: problems.length
+        ? problems[0].detail
+        : 'Principal, outstanding, repayment and tenure agree with each other.',
+      resolution: null,
+    })
+  }
+
+  // 11 — The repayment record itself. This is the point of the reference.
+  const missed = informant.missed_payments_12m
+  if (missed != null) {
+    const maxMissed = cfg.max_missed_payments_12m ?? 2
+    const over = Number(missed) > Number(maxMissed)
+    findings.push({
+      code: 'RC-INF-03',
+      label: 'Informal repayment conduct (last 12 months)',
+      status: over ? FINDING_STATUS.ADVISORY : FINDING_STATUS.MATCHED,
+      severity: over ? 'ADVISORY' : 'INFO',
+      comparison: {
+        left: {
+          field: 'Missed payments reported',
+          value: Number(missed),
+          source: 'InformantReference.pdf',
+          kind: 'number',
+        },
+        right: {
+          field: 'Policy tolerance',
+          value: Number(maxMissed),
+          source: 'policy.informal_credit',
+          kind: 'number',
+        },
+      },
+      tolerance: { max_missed_payments_12m: maxMissed },
+      evidence: ['informant.missed_payments_12m', 'informant.longest_delay_days'],
+      note: over
+        ? 'Informal repayment conduct is outside policy tolerance.'
+        : 'A repayment record no bureau holds — the strongest signal a thin file has.',
+      resolution: null,
+    })
+  }
+
+  // 12 — Is the relationship long enough to mean anything?
+  const monthsKnown = informant.months_known
+  if (monthsKnown != null) {
+    const minMonths = cfg.min_months_known ?? 6
+    const thin = Number(monthsKnown) < Number(minMonths)
+    findings.push({
+      code: 'RC-INF-04',
+      label: 'Depth of the lending relationship',
+      status: thin ? FINDING_STATUS.ADVISORY : FINDING_STATUS.MATCHED,
+      severity: thin ? 'ADVISORY' : 'INFO',
+      comparison: {
+        left: {
+          field: 'Months known',
+          value: Number(monthsKnown),
+          source: 'InformantReference.pdf',
+          kind: 'number',
+        },
+        right: {
+          field: 'Policy minimum',
+          value: Number(minMonths),
+          source: 'policy.informal_credit',
+          kind: 'number',
+        },
+      },
+      tolerance: { min_months_known: minMonths },
+      evidence: ['informant.months_known'],
+      note: thin ? 'Too short a relationship to carry weight as a credit reference.' : null,
+      resolution: null,
+    })
+  }
+
+  // 13 — Does the informant know the borrower by the name on the KYC?
+  const knownAs = informant.borrower_known_as
+  if (knownAs) {
+    findings.push(
+      scoreFinding({
+        code: 'RC-INF-05',
+        label: 'Applicant name vs name the informant knows',
+        left: {
+          field: 'Applicant name',
+          value: applicant.name,
+          source: 'Aadhaar.pdf',
+          kind: 'text',
+        },
+        right: {
+          field: 'Known to informant as',
+          value: knownAs,
+          source: 'InformantReference.pdf',
+          kind: 'text',
+        },
+        similarity: nameSimilarity(applicant.name, knownAs),
+        tolerance: tol.informant_name_match || tol.name_match || {},
+        evidence: ['applicant.name', 'informant.borrower_known_as'],
+        note: 'A reference is only a reference if it is about this borrower.',
+      })
+    )
+  }
+
+  return findings
 }
 
 /**

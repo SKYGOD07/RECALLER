@@ -29,6 +29,7 @@ export const STAGE_PLAN = [
   { id: 'BANK', label: 'Bank statement extraction', stage: 'BANK_EXTRACTION', actor: ACTORS.LLM },
   { id: 'PLATFORM', label: 'Platform earnings extraction', stage: 'PLATFORM_EXTRACTION', actor: ACTORS.LLM },
   { id: 'INVOICE', label: 'Invoice extraction', stage: 'INVOICE_EXTRACTION', actor: ACTORS.LLM },
+  { id: 'INFORMANT', label: 'Informal-lender reference', stage: 'INFORMANT_ATTESTATION', actor: ACTORS.ENGINE },
   { id: 'VALIDATE', label: 'Evidence validation', stage: 'EVIDENCE_VALIDATION', actor: ACTORS.ENGINE },
   { id: 'RECONCILE', label: 'Reconciliation', stage: 'RECONCILIATION', actor: ACTORS.ENGINE },
   { id: 'GATE', label: 'Confidence gate', stage: 'CONFIDENCE_GATE', actor: ACTORS.ENGINE },
@@ -106,7 +107,7 @@ function createStageRunner(box, clock, onStage) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const STAGE_PACING = {
-  INGEST: 380, KYC: 900, BANK: 1500, PLATFORM: 850, INVOICE: 780,
+  INGEST: 380, KYC: 900, BANK: 1500, PLATFORM: 850, INVOICE: 780, INFORMANT: 540,
   VALIDATE: 420, RECONCILE: 620, GATE: 340, CREDIT: 520,
   POLICY: 460, DECISION: 380, MEMO: 700,
 }
@@ -140,13 +141,14 @@ export async function runUnderwriting({
   }))
 
   // Extraction
-  const extraction = await extractBundle({ documents, application, adapter, seed: application.id })
+  const extraction = await extractBundle({ documents, application, adapter, seed: application.id, policy })
 
   const groups = [
     ['KYC', ['AADHAAR', 'PAN', 'DRIVING_LICENCE']],
     ['BANK', ['BANK_STATEMENT']],
     ['PLATFORM', ['PLATFORM_EARNINGS']],
     ['INVOICE', ['DEALER_INVOICE']],
+    ['INFORMANT', ['INFORMANT_REFERENCE']],
   ]
 
   for (const [planId, types] of groups) {
@@ -253,7 +255,7 @@ export async function runUnderwriting({
       audit: box.ledger,
       checkpoint: {
         created_at: clock(),
-        completed_stages: ['INGEST', 'KYC', 'BANK', 'PLATFORM', 'INVOICE', 'VALIDATE', 'RECONCILE', 'GATE'],
+        completed_stages: ['INGEST', 'KYC', 'BANK', 'PLATFORM', 'INVOICE', 'INFORMANT', 'VALIDATE', 'RECONCILE', 'GATE'],
         fields, extraction_stats: stats, extraction_hash: extraction.extraction_hash,
         byDocument: extraction.byDocument, reconciliation, ledger: box.ledger,
         seed: application.id,

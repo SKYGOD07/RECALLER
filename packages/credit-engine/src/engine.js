@@ -105,6 +105,81 @@ export function calculateObligations(recurringDebits) {
   return { total: sumRupees(items.map((i) => i.amount)), items }
 }
 
+export const INFORMAL_CREDIT_DEFAULTS = Object.freeze({
+  count_undisclosed_as_obligation: true,
+  obligation_match_tolerance_pct: 0.15,
+  min_months_known: 6,
+  max_missed_payments_12m: 2,
+})
+
+/** Numeric or null — policy rules compare numbers, and absent is not zero. */
+function asNumber(value) {
+  if (value == null || typeof value === 'boolean') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Decide, deterministically, whether an informant's loan is already counted.
+ *
+ * An informal lender says the borrower pays them 3,000 a month. Either the bank
+ * statement already shows that outflow — in which case it is in the obligation
+ * total and adding it again would double-count a real borrower out of a real
+ * loan — or it does not, in which case the file has been understating its
+ * obligations and the engine now knows better.
+ *
+ * Matching is on amount, within a policy tolerance. That is the only signal
+ * available: a cash repayment to a shopkeeper carries no narration to match on.
+ */
+export function reconcileInformantObligation(informant, recurringDebits = [], policy = null) {
+  const cfg = { ...INFORMAL_CREDIT_DEFAULTS, ...((policy || {}).informal_credit || {}) }
+
+  const monthly = toRupees(toPaise((informant || {}).monthly_repayment || 0))
+  const outstanding = toRupees(toPaise((informant || {}).current_outstanding || 0))
+
+  if (!informant || monthly <= 0 || outstanding <= 0) {
+    // A settled informal loan is a repayment record, not an obligation.
+    return {
+      applicable: false,
+      corroborated: false,
+      matched_debit: null,
+      added: 0,
+      monthly_repayment: monthly,
+      outstanding,
+      tolerance_pct: cfg.obligation_match_tolerance_pct,
+    }
+  }
+
+  const tolerance = Number(cfg.obligation_match_tolerance_pct)
+  let matched = null
+  for (const d of recurringDebits || []) {
+    if (d.isObligation === false) continue
+    const amount = toRupees(toPaise(d.amount || 0))
+    if (amount <= 0) continue
+    const base = Math.max(amount, monthly)
+    if (Math.abs(amount - monthly) / base <= tolerance) {
+      matched = {
+        label: d.label || '',
+        amount,
+        delta: roundHalfUp(Math.abs(amount - monthly), 2),
+        delta_pct: roundHalfUp(Math.abs(amount - monthly) / base, 4),
+      }
+      break
+    }
+  }
+
+  const add = Boolean(cfg.count_undisclosed_as_obligation) && matched === null
+  return {
+    applicable: true,
+    corroborated: matched !== null,
+    matched_debit: matched,
+    added: add ? monthly : 0,
+    monthly_repayment: monthly,
+    outstanding,
+    tolerance_pct: tolerance,
+  }
+}
+
 function mean(xs) {
   if (!xs || xs.length === 0) return 0
   const totalPaise = xs.reduce((acc, x) => acc + toPaise(x), 0)
@@ -203,6 +278,21 @@ export function computeCreditMetrics({ evidence, loanRequest, policy }) {
   )
 
   const obligations = calculateObligations(bankEv.recurring_debits || [])
+
+  // An informal-lender reference can only ever move obligations upward, and only
+  // through this engine. The informant states a number; the engine decides
+  // whether it is already in the total.
+  const informantEv = evidence.informant || {}
+  const informal = reconcileInformantObligation(informantEv, bankEv.recurring_debits || [], policy)
+  if (informal.added > 0) {
+    obligations.items.push({
+      label: `Informal credit — ${informantEv.business_name || informantEv.name || 'informant reference'}`,
+      amount: informal.added,
+      kind: 'INFORMAL_CREDIT',
+      source: 'Informant reference (no matching bank debit)',
+    })
+    obligations.total = sumRupees(obligations.items.map((i) => i.amount))
+  }
   const emi = calculateEmi(amount, rate, tenure)
   const ratioDp = (policy.rounding || {}).ratio_dp || 4
   const foir = calculateFoir(income.verified_monthly_income, obligations.total, emi, ratioDp)
@@ -229,6 +319,7 @@ export function computeCreditMetrics({ evidence, loanRequest, policy }) {
     invoice_on_road_price: invoiceValue,
     assessed_value: altValue,
     months_observed: income.months_observed,
+    informal_obligation_added: informal.added,
   }
 
   return {
@@ -251,9 +342,18 @@ export function computeCreditMetrics({ evidence, loanRequest, policy }) {
       total_payable: schedule.totalPayable,
       loan_amount: amount,
       tenure_months: tenure,
+      // Informal credit. Numeric so policy rules can bind to them; the
+      // informant supplies the statement, the engine supplies the numbers.
+      informal_monthly_repayment: informal.monthly_repayment,
+      informal_outstanding: informal.outstanding,
+      informal_obligation_added: informal.added,
+      informal_corroborated: informal.corroborated ? 1 : 0,
+      informal_missed_payments_12m: asNumber(informantEv.missed_payments_12m),
+      informal_months_known: asNumber(informantEv.months_known),
     },
     income_breakdown: income,
     obligation_breakdown: obligations,
+    informal_credit: informal,
     schedule: schedule.rows,
     input_hash: hashValue(inputs),
   }

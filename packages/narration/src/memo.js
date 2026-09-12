@@ -122,6 +122,71 @@ export function decisionHeadline(record) {
 /**
  * Build the structured credit memo dictionary.
  */
+/**
+ * Say what the informal-lender reference contributed, in the engine numbers.
+ *
+ * Every figure here is read from the deterministic result. The section exists
+ * because a reader of this memo is entitled to know that part of the obligation
+ * total came from somebody attesting to it rather than from a statement, and to
+ * know exactly how much.
+ */
+export function informantNarrative(record) {
+  const values = (record.evidence || {}).values || {}
+  const informant = values.informant
+  if (!informant || !Object.keys(informant).length) return ''
+
+  const credit = record.credit || {}
+  const informal = credit.informal_credit || {}
+  const quality = informant._attestation || {}
+
+  const who = informant.business_name || informant.name || 'an informal lender'
+  const months = informant.months_known
+  const missed = informant.missed_payments_12m
+
+  const parts = []
+  const rel = String(informant.relationship || '').replace(/_/g, ' ').toLowerCase()
+  let lead = `${who} attests to a ${rel} relationship with the applicant`
+  if (months != null) lead += ` running ${Math.round(Number(months))} months`
+  parts.push(`${lead}.`)
+
+  if (missed != null) {
+    parts.push(
+      Number(missed) === 0
+        ? 'No missed payments were reported over the last twelve months.'
+        : `${Math.round(Number(missed))} missed payment(s) were reported over the last twelve months.`
+    )
+  }
+
+  if (informal.applicable) {
+    const monthly = formatInr(informal.monthly_repayment, { decimals: 2 })
+    if (informal.corroborated) {
+      const matched = (informal.matched_debit || {}).label || 'a recurring debit'
+      parts.push(
+        `The stated repayment of ${monthly} per month matches ${matched} in the bank ` +
+          'statement, so it is counted once in the obligation total and not twice.'
+      )
+    } else if ((informal.added || 0) > 0) {
+      parts.push(
+        `No bank debit corresponds to the stated repayment of ${monthly} per month, so the ` +
+          `engine added ${formatInr(informal.added, { decimals: 2 })} to existing obligations. ` +
+          'This tightens the assessment; it does not relax it.'
+      )
+    }
+  } else {
+    parts.push('The informal loan is settled, so it adds no obligation to this assessment.')
+  }
+
+  if (quality.ceiling != null) {
+    parts.push(
+      `Confidence on this evidence is capped at ${Number(quality.ceiling).toFixed(2)} because it ` +
+        'is a third-party attestation rather than a document. It cannot raise recognised ' +
+        'income or relax a policy limit.'
+    )
+  }
+
+  return parts.join(' ')
+}
+
 export function buildCreditMemo(record) {
   const app = record.application || {}
   const evidence = record.evidence || {}
@@ -181,6 +246,18 @@ export function buildCreditMemo(record) {
       ['Total interest over term', formatInr(m.total_interest, { decimals: 2 })],
     ],
   })
+
+  // Informal-lender reference, when one was supplied
+  const informantBody = informantNarrative(record)
+  if (informantBody) {
+    sections.push({
+      id: 'informant',
+      title: 'Informal-lender reference',
+      kind: 'prose',
+      note: 'Third-party attestation. Contributes obligations and repayment conduct only.',
+      body: informantBody,
+    })
+  }
 
   sections.push({
     id: 'reconciliation', title: 'Cross-document reconciliation', kind: 'findings',

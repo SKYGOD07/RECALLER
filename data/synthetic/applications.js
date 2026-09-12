@@ -20,6 +20,14 @@ const PAGES = {
     'platform.provider': 1, 'platform.partner_id': 1,
     'platform.monthly_net': 2, 'platform.active_months': 1, 'platform.rating': 1,
   },
+  INFORMANT_REFERENCE: {
+    'informant.name': 1, 'informant.relationship': 1, 'informant.business_name': 1,
+    'informant.contact': 1, 'informant.contact_verified': 1, 'informant.borrower_known_as': 1,
+    'informant.months_known': 1, 'informant.principal_lent': 2, 'informant.current_outstanding': 2,
+    'informant.monthly_repayment': 2, 'informant.missed_payments_12m': 2,
+    'informant.longest_delay_days': 2, 'informant.would_lend_again': 2,
+    'informant.attested_at': 2, 'informant.note': 2,
+  },
   DEALER_INVOICE: {
     'invoice.dealer_name': 1, 'invoice.invoice_number': 1, 'invoice.model': 1,
     'invoice.vehicle_category': 1, 'invoice.chassis_number': 1,
@@ -42,7 +50,7 @@ function doc(appId, docType, filename, payload, { pages = 1, degrade = null, siz
   }
 }
 
-function bundle(appId, { kyc, pan, bank, invoice, platform = null, degrade = null }) {
+function bundle(appId, { kyc, pan, bank, invoice, platform = null, informant = null, degrade = null }) {
   const deg = degrade || {}
   const docs = [
     doc(appId, 'AADHAAR', 'Aadhaar.pdf', { applicant: kyc }, { pages: 2, degrade: deg.AADHAAR, sizeKb: 612 }),
@@ -54,6 +62,11 @@ function bundle(appId, { kyc, pan, bank, invoice, platform = null, degrade = nul
     const provider = platform.provider || 'Platform'
     docs.splice(3, 0,
       doc(appId, 'PLATFORM_EARNINGS', `${provider}Earnings.pdf`, { platform }, { pages: 3, degrade: deg.PLATFORM_EARNINGS, sizeKb: 522 })
+    )
+  }
+  if (informant) {
+    docs.push(
+      doc(appId, 'INFORMANT_REFERENCE', 'InformantReference.pdf', { informant }, { pages: 2, degrade: deg.INFORMANT_REFERENCE, sizeKb: 198 })
     )
   }
   return docs
@@ -79,6 +92,26 @@ const A1 = {
       recurring_debits: [{ label: 'Consumer durable EMI — Bajaj Finance', amount: 2400, kind: 'LOAN_EMI', source: 'Recurring debit, 5th of month' }],
     },
     platform: { provider: 'Rapido', partner_id: 'RPD-DL-XXXX-3391', monthly_net: [32800, 34200, 33100, 32200, 34700, 33600], active_months: 22, rating: 4.7 },
+    // A cleared informal loan. It adds no obligation — there is nothing left to
+    // pay — but it is three and a half years of repayment record that no bureau
+    // ever saw, which is the whole point of asking.
+    informant: {
+      name: 'Suresh Kumar Gupta',
+      relationship: 'SHOPKEEPER_CREDIT',
+      business_name: 'Gupta General Store, Bapa Nagar',
+      contact: '98XXXXXX07',
+      contact_verified: true,
+      borrower_known_as: 'Rahul Sharma',
+      months_known: 41,
+      principal_lent: 38000,
+      current_outstanding: 0,
+      monthly_repayment: 0,
+      missed_payments_12m: 0,
+      longest_delay_days: 4,
+      would_lend_again: true,
+      attested_at: '2026-08-29',
+      note: 'Goods advanced on running account since 2023. Cleared in full in June.',
+    },
     invoice: {
       dealer_name: 'Volt Mobility Pvt Ltd, Karol Bagh', invoice_number: 'VM/26-27/01884',
       model: 'Ather 450S', vehicle_category: 'EV_2W', chassis_number: 'MD9XXXXXXXXXX1884',
@@ -105,6 +138,27 @@ const A2 = {
       monthly_cash_deposits: [11200, 12400, 10800, 11900, 12100, 11600],
       average_monthly_balance: 14200, bounce_count: 1,
       recurring_debits: [{ label: 'Self-help group instalment', amount: 1800, kind: 'GROUP_LOAN', source: 'Recurring debit, 10th of month' }],
+    },
+    // The numbers in this reference do not describe one loan: 60,000 repaid at
+    // 4,000 a month is fifteen months of repayment inside a relationship stated
+    // as nine. Confidence falls below the attested floor and the field joins the
+    // officer queue rather than silently moving FOIR.
+    informant: {
+      name: 'Ram Prasad Sah',
+      relationship: 'INFORMAL_LENDER',
+      business_name: 'Sah Finance, Kankarbagh',
+      contact: '94XXXXXX61',
+      contact_verified: false,
+      borrower_known_as: 'Meena Devi',
+      months_known: 9,
+      principal_lent: 60000,
+      current_outstanding: 0,
+      monthly_repayment: 4000,
+      missed_payments_12m: 0,
+      longest_delay_days: 0,
+      would_lend_again: true,
+      attested_at: '2026-08-30',
+      note: 'Stated as fully repaid.',
     },
     invoice: {
       dealer_name: 'Ganga Auto Sales, Kankarbagh', invoice_number: 'GA/26-27/00412',
@@ -215,6 +269,27 @@ const A6 = {
       monthly_credits: [28400, 26900, 29600, 27800],
       monthly_cash_deposits: [6400, 5900, 6800, 6200],
       average_monthly_balance: 5200, bounce_count: 0, recurring_debits: [],
+    },
+    // The file that most needs this. Four months of bank history and no platform
+    // record — but a four-year running account with her cloth supplier, repaid
+    // in cash, which is why the bank statement shows nothing. The engine adds
+    // the obligation the statement never carried.
+    informant: {
+      name: 'Abdul Rashid Ansari',
+      relationship: 'SHOPKEEPER_CREDIT',
+      business_name: 'Ansari Cloth House, Nazirabad',
+      contact: '89XXXXXX43',
+      contact_verified: true,
+      borrower_known_as: 'Farida Begum',
+      months_known: 48,
+      principal_lent: 84000,
+      current_outstanding: 19600,
+      monthly_repayment: 2800,
+      missed_payments_12m: 1,
+      longest_delay_days: 11,
+      would_lend_again: true,
+      attested_at: '2026-09-01',
+      note: 'Fabric supplied on credit for the tailoring unit since 2022. Settled in cash each month.',
     },
     invoice: {
       dealer_name: 'Awadh EV Showroom, Aminabad', invoice_number: 'AEV/26-27/00558',
