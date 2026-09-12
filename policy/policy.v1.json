@@ -51,7 +51,6 @@
       "applicant.id_number",
       "bank.account_holder_name",
       "bank.account_number",
-      "income.verified_monthly_income",
       "invoice.on_road_price",
       "invoice.chassis_number",
       "informant.current_outstanding",

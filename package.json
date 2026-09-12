@@ -5,20 +5,18 @@
   "type": "module",
   "description": "RECALLER — AI agentic credit underwriter for thin-file green borrowers.",
   "scripts": {
-    "dev": "npm --prefix frontend run dev",
-    "dev:app": "npm --prefix app run dev",
-    "dev:site": "npm --prefix frontend run dev",
-    "dev:backend": "python -m recaller.cli serve --reload",
     "app": "npm --prefix app run dev",
     "app:build": "npm --prefix app run build",
     "app:start": "npm --prefix app run start",
     "site": "npm --prefix frontend run dev",
     "site:build": "npm --prefix frontend run build",
-    "verify": "node scripts/verify-pipeline.mjs",
-    "verify:verbose": "node scripts/verify-pipeline.mjs --verbose",
-    "test": "python -m recaller.cli test",
-    "check": "python -m unittest discover -s tests -p \"test_*.py\"",
-    "install:all": "npm --prefix app install && npm --prefix frontend install && pip install -e \".[dev]\""
+    "test": "node --import ./scripts/alias.mjs --test scripts/test-engine.mjs",
+    "test:agent": "node --import ./scripts/alias.mjs --test scripts/test-agent.mjs",
+    "verify": "node --import ./scripts/alias.mjs scripts/verify-pipeline.mjs",
+    "verify:verbose": "node --import ./scripts/alias.mjs scripts/verify-pipeline.mjs --verbose",
+    "data:validate": "node --import ./scripts/alias.mjs scripts/validate-data.mjs",
+    "check": "npm run data:validate && npm run test && npm run test:agent && npm run verify",
+    "install:all": "npm --prefix app install && npm --prefix frontend install"
   },
   "engines": {
     "node": ">=20.0.0"

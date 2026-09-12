@@ -17,6 +17,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { test } from 'node:test'
 import { URL, fileURLToPath } from 'node:url'
 
+import { STAGES } from '@core/audit.js'
 import { STAGE_PLAN, replay, resumeUnderwriting, runUnderwriting } from '@orchestrator/index.js'
 import { SYNTHETIC_APPLICATIONS } from '@synthetic/applications.js'
 
@@ -141,12 +142,21 @@ test('the execution trace is real, ordered, and hash-chained', async () => {
     assert.ok(e.durationMs >= 0)
   }
 
-  // Each event names who did it, and the chain links.
-  for (const e of events) {
+  // Each event names who did it, is sequenced, and links to the one before it.
+  let prev = '0'.repeat(32)
+  events.forEach((e, i) => {
     assert.ok(e.actor, 'event with no actor')
     assert.ok(e.stage, 'event with no stage')
-    assert.ok(e.hash, 'event with no hash')
-  }
+    assert.ok(e.digest, 'event with no digest')
+    assert.equal(e.seq, i + 1, 'events are out of sequence')
+    assert.equal(e.prev, prev, `chain broken at event ${i}`)
+    prev = e.digest
+  })
+  assert.equal(record.audit.head, prev, 'ledger head does not match the last event')
+
+  // The informant stage is a declared stage, not an ad-hoc string.
+  assert.ok(STAGES.includes('INFORMANT_ATTESTATION'))
+  assert.ok(events.some((e) => e.stage === 'INFORMANT_ATTESTATION'))
 })
 
 test('a held file publishes its officer queue and no verdict', async () => {
