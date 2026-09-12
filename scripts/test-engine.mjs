@@ -76,7 +76,7 @@ const LOAN = { amount: 80000, tenureMonths: 36, segment: 'EV_2W' }
 
 test('EMI matches the closed-form reducing-balance formula', () => {
   // 100000 at 15% over 24 months
-  assert.equal(calculateEmi(100000, 15, 24), 4849.21)
+  assert.equal(calculateEmi(100000, 15, 24), 4848.66)
   assert.equal(calculateEmi(0, 15, 24), 0)
   assert.equal(calculateEmi(100000, 15, 0), 0)
 })
