@@ -6,37 +6,43 @@
   "owner": "Credit Policy Committee",
   "description": "Retail credit policy for EV two- and three-wheeler financing to thin-file and new-to-credit borrowers.",
   "currency": "INR",
-
   "segments": {
     "EV_2W": {
       "label": "Electric Two-Wheeler",
       "max_ticket": 180000,
       "min_ticket": 40000,
-      "tenure_months": { "min": 12, "max": 48 },
+      "tenure_months": {
+        "min": 12,
+        "max": 48
+      },
       "rate_annual_pct": 16.5
     },
     "EV_3W_PASSENGER": {
       "label": "Electric Three-Wheeler (Passenger)",
       "max_ticket": 420000,
       "min_ticket": 90000,
-      "tenure_months": { "min": 18, "max": 60 },
+      "tenure_months": {
+        "min": 18,
+        "max": 60
+      },
       "rate_annual_pct": 18.0
     },
     "EV_3W_CARGO": {
       "label": "Electric Three-Wheeler (Cargo)",
       "max_ticket": 480000,
       "min_ticket": 90000,
-      "tenure_months": { "min": 18, "max": 60 },
+      "tenure_months": {
+        "min": 18,
+        "max": 60
+      },
       "rate_annual_pct": 18.5
     }
   },
-
   "rounding": {
     "money_dp": 2,
     "ratio_dp": 4,
     "mode": "HALF_UP"
   },
-
   "confidence": {
     "field_threshold": 0.8,
     "critical_field_threshold": 0.88,
@@ -47,10 +53,20 @@
       "bank.account_number",
       "income.verified_monthly_income",
       "invoice.on_road_price",
-      "invoice.chassis_number"
-    ]
+      "invoice.chassis_number",
+      "informant.current_outstanding",
+      "informant.monthly_repayment"
+    ],
+    "attested_field_threshold": 0.55,
+    "attested_critical_field_threshold": 0.66,
+    "informant": {
+      "source_confidence_ceiling": 0.74,
+      "unverified_contact_ceiling": 0.62,
+      "non_arms_length_ceiling": 0.55,
+      "min_months_known": 6,
+      "ledger_tolerance_months": 1.5
+    }
   },
-
   "rules": [
     {
       "code": "P-FOIR-01",
@@ -58,7 +74,10 @@
       "metric": "foir",
       "operator": "lte",
       "threshold": 0.5,
-      "refer_band": [0.5, 0.55],
+      "refer_band": [
+        0.5,
+        0.55
+      ],
       "severity": "BLOCKING",
       "reject_reason": "R01",
       "refer_reason": "F03",
@@ -71,7 +90,10 @@
       "metric": "ltv",
       "operator": "lte",
       "threshold": 0.85,
-      "refer_band": [0.85, 0.9],
+      "refer_band": [
+        0.85,
+        0.9
+      ],
       "severity": "BLOCKING",
       "reject_reason": "R03",
       "refer_reason": "F04",
@@ -84,7 +106,10 @@
       "metric": "verified_monthly_income",
       "operator": "gte",
       "threshold": 14000,
-      "refer_band": [12000, 14000],
+      "refer_band": [
+        12000,
+        14000
+      ],
       "severity": "BLOCKING",
       "reject_reason": "R04",
       "refer_reason": "F05",
@@ -97,7 +122,10 @@
       "metric": "income_months_observed",
       "operator": "gte",
       "threshold": 6,
-      "refer_band": [4, 6],
+      "refer_band": [
+        4,
+        6
+      ],
       "severity": "BLOCKING",
       "reject_reason": "R05",
       "refer_reason": "F06",
@@ -110,7 +138,10 @@
       "metric": "income_volatility",
       "operator": "lte",
       "threshold": 0.35,
-      "refer_band": [0.35, 0.5],
+      "refer_band": [
+        0.35,
+        0.5
+      ],
       "severity": "ADVISORY",
       "reject_reason": null,
       "refer_reason": "F07",
@@ -123,7 +154,10 @@
       "metric": "average_monthly_balance",
       "operator": "gte",
       "threshold": 3000,
-      "refer_band": [1500, 3000],
+      "refer_band": [
+        1500,
+        3000
+      ],
       "severity": "ADVISORY",
       "reject_reason": null,
       "refer_reason": "F08",
@@ -136,7 +170,10 @@
       "metric": "bounce_count",
       "operator": "lte",
       "threshold": 1,
-      "refer_band": [1, 3],
+      "refer_band": [
+        1,
+        3
+      ],
       "severity": "BLOCKING",
       "reject_reason": "R07",
       "refer_reason": "F09",
@@ -214,7 +251,10 @@
       "metric": "advisory_finding_count",
       "operator": "lte",
       "threshold": 1,
-      "refer_band": [1, 4],
+      "refer_band": [
+        1,
+        4
+      ],
       "severity": "ADVISORY",
       "reject_reason": null,
       "refer_reason": "F10",
@@ -233,17 +273,50 @@
       "refer_reason": "F01",
       "pass_reason": "A10",
       "rationale": "Fields extracted below the confidence floor must be confirmed by an officer before decisioning."
+    },
+    {
+      "code": "P-INF-01",
+      "label": "Informal repayment conduct",
+      "metric": "informal_missed_payments_12m",
+      "operator": "lte",
+      "threshold": 2,
+      "refer_band": [
+        2,
+        4
+      ],
+      "severity": "ADVISORY",
+      "reject_reason": null,
+      "refer_reason": "F11",
+      "pass_reason": "A11",
+      "rationale": "Where an informal-lender reference exists, its repayment record is read as conduct evidence. Absent a reference the rule does not apply."
     }
   ],
-
   "reconciliation": {
-    "income_declared_vs_verified": { "advisory_pct": 0.15, "blocking_pct": 0.3 },
-    "platform_vs_bank_credits": { "advisory_pct": 0.12, "blocking_pct": 0.25 },
-    "invoice_vs_onroad": { "advisory_pct": 0.05, "blocking_pct": 0.12 },
-    "name_match": { "advisory_score": 0.88, "blocking_score": 0.7 },
-    "address_match": { "advisory_score": 0.75, "blocking_score": 0.5 }
+    "income_declared_vs_verified": {
+      "advisory_pct": 0.15,
+      "blocking_pct": 0.3
+    },
+    "platform_vs_bank_credits": {
+      "advisory_pct": 0.12,
+      "blocking_pct": 0.25
+    },
+    "invoice_vs_onroad": {
+      "advisory_pct": 0.05,
+      "blocking_pct": 0.12
+    },
+    "name_match": {
+      "advisory_score": 0.88,
+      "blocking_score": 0.7
+    },
+    "address_match": {
+      "advisory_score": 0.75,
+      "blocking_score": 0.5
+    },
+    "informant_name_match": {
+      "advisory_score": 0.82,
+      "blocking_score": 0.62
+    }
   },
-
   "income_recognition": {
     "platform_earnings_haircut": 0.1,
     "cash_deposit_haircut": 0.5,
@@ -251,7 +324,6 @@
     "observation_window_months": 6,
     "method": "LOWER_OF_BANK_CREDIT_RUNRATE_AND_PLATFORM_NET"
   },
-
   "reason_codes": {
     "A01": "Verified monthly income meets policy floor",
     "A02": "FOIR within policy ceiling",
@@ -283,6 +355,16 @@
     "F07": "Income volatility in referral band",
     "F08": "Average monthly balance in referral band",
     "F09": "Returned debits in referral band",
-    "F10": "Multiple advisory reconciliation findings"
+    "F10": "Multiple advisory reconciliation findings",
+    "A11": "Informal repayment record within policy tolerance",
+    "F11": "Informal repayment record requires officer review",
+    "F12": "Informal obligation disclosed by reference but absent from bank statement"
+  },
+  "informal_credit": {
+    "count_undisclosed_as_obligation": true,
+    "obligation_match_tolerance_pct": 0.15,
+    "min_months_known": 6,
+    "max_missed_payments_12m": 2,
+    "rationale": "An informal-lender reference can raise the obligation total and can evidence repayment conduct. It can never raise an income figure, relax a ratio ceiling or substitute for KYC."
   }
 }
