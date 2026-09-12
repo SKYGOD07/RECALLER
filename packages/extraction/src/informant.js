@@ -37,16 +37,30 @@ export const IDENTITY_PATHS = [
   'informant.note',
 ]
 
-/** Fields that describe the loan itself — these carry the coherence penalty. */
-export const LEDGER_PATHS = [
+/**
+ * The four numbers that describe one loan and therefore imply each other. A
+ * contradiction between them discredits all four.
+ */
+export const ARITHMETIC_PATHS = [
   'informant.months_known',
   'informant.principal_lent',
   'informant.current_outstanding',
   'informant.monthly_repayment',
+]
+
+/**
+ * How the borrower behaved. Separate on purpose: a reference that fumbles the
+ * arithmetic of a loan has not thereby become unreliable about whether the
+ * borrower paid on time, and sweeping these into the same score buried an
+ * officer in queue items they had no way to act on.
+ */
+export const CONDUCT_PATHS = [
   'informant.missed_payments_12m',
   'informant.longest_delay_days',
   'informant.would_lend_again',
 ]
+
+export const LEDGER_PATHS = [...ARITHMETIC_PATHS, ...CONDUCT_PATHS]
 
 /**
  * What a complete reference looks like. Completeness is measured against this,
@@ -132,6 +146,8 @@ export function ledgerCoherence(informant, policy = null) {
   if (principal == null || outstanding == null) {
     return {
       score: 0.7,
+      arithmetic_score: 0.7,
+      conduct_score: 0.7,
       checkable: false,
       problems: [],
       implied_months_repaid: null,
@@ -144,6 +160,7 @@ export function ledgerCoherence(informant, policy = null) {
   if (outstanding > principal) {
     problems.push({
       code: 'OUTSTANDING_EXCEEDS_PRINCIPAL',
+      scope: 'ARITHMETIC',
       detail: `Outstanding ${inr(outstanding)} exceeds principal lent ${inr(principal)}.`,
       weight: 0.45,
     })
@@ -167,6 +184,7 @@ export function ledgerCoherence(informant, policy = null) {
         const penalty = Math.min(0.45, 0.08 + overshoot * 0.03)
         problems.push({
           code: 'REPAYMENT_EXCEEDS_RELATIONSHIP',
+          scope: 'ARITHMETIC',
           detail:
             `${inr(repaid)} repaid at ${inr(monthly)}/month implies ${impliedMonthsRepaid} ` +
             `months of repayment, but the relationship is stated as ${monthsKnown} months.`,
@@ -178,6 +196,7 @@ export function ledgerCoherence(informant, policy = null) {
   } else if (outstanding > 0) {
     problems.push({
       code: 'OUTSTANDING_WITHOUT_REPAYMENT',
+      scope: 'ARITHMETIC',
       detail: `${inr(outstanding)} outstanding but no monthly repayment stated.`,
       weight: 0.2,
     })
@@ -189,6 +208,7 @@ export function ledgerCoherence(informant, policy = null) {
     if (missed > observable) {
       problems.push({
         code: 'MISSED_EXCEEDS_OBSERVABLE',
+        scope: 'CONDUCT',
         detail:
           `${missed} missed payments reported over a relationship of only ` +
           `${monthsKnown} months.`,
@@ -198,8 +218,13 @@ export function ledgerCoherence(informant, policy = null) {
     }
   }
 
+  const sumWeights = (scope) =>
+    problems.filter((p) => p.scope === scope).reduce((a, p) => a + p.weight, 0)
+
   return {
     score: roundHalfUp(Math.max(0, Math.min(1, score)), 4),
+    arithmetic_score: roundHalfUp(Math.max(0, Math.min(1, 1 - sumWeights('ARITHMETIC'))), 4),
+    conduct_score: roundHalfUp(Math.max(0, Math.min(1, 1 - sumWeights('CONDUCT'))), 4),
     checkable: true,
     problems,
     implied_months_repaid: impliedMonthsRepaid,
@@ -234,14 +259,18 @@ export function attestationQuality(informant, policy = null) {
   // stopped carrying information. Scaling keeps the cap absolute while leaving
   // every signal visible.
   const identityScore = 0.55 + 0.3 * comp + 0.15 * (verified ? 1 : 0)
-  const ledgerScore = (0.5 + 0.25 * comp + 0.25 * depth) * coherence.score
+  const substance = 0.5 + 0.25 * comp + 0.25 * depth
+  const ledgerScore = substance * coherence.arithmetic_score
+  const conductScore = substance * coherence.conduct_score
 
   const identity = ceiling * Math.min(1, identityScore)
   const ledger = ceiling * Math.min(1, ledgerScore)
+  const conduct = ceiling * Math.min(1, conductScore)
 
   return {
     identity_score: roundHalfUp(Math.min(1, identityScore), 4),
     ledger_score: roundHalfUp(Math.min(1, ledgerScore), 4),
+    conduct_score: roundHalfUp(Math.min(1, conductScore), 4),
     completeness: comp,
     coherence,
     contact_verified: verified,
@@ -252,13 +281,16 @@ export function attestationQuality(informant, policy = null) {
     ceiling: roundHalfUp(ceiling, 4),
     identity_confidence: roundHalfUp(Math.max(0.05, Math.min(ceiling, identity)), 4),
     ledger_confidence: roundHalfUp(Math.max(0.05, Math.min(ceiling, ledger)), 4),
+    conduct_confidence: roundHalfUp(Math.max(0.05, Math.min(ceiling, conduct)), 4),
   }
 }
 
 /** Confidence for one informant field, from the reference's overall quality. */
 export function confidenceFor(path, informant, policy = null, quality = null) {
   const q = quality || attestationQuality(informant, policy)
-  return LEDGER_PATHS.includes(path) ? q.ledger_confidence : q.identity_confidence
+  if (ARITHMETIC_PATHS.includes(path)) return q.ledger_confidence
+  if (CONDUCT_PATHS.includes(path)) return q.conduct_confidence
+  return q.identity_confidence
 }
 
 /** True for evidence a third party asserted rather than a document showed. */

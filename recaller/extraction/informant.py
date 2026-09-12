@@ -43,16 +43,26 @@ IDENTITY_PATHS = (
     "informant.note",
 )
 
-# Fields that describe the loan itself — these carry the coherence penalty.
-LEDGER_PATHS = (
+# The four numbers that describe one loan and therefore imply each other. A
+# contradiction between them discredits all four.
+ARITHMETIC_PATHS = (
     "informant.months_known",
     "informant.principal_lent",
     "informant.current_outstanding",
     "informant.monthly_repayment",
+)
+
+# How the borrower behaved. Separate on purpose: a reference that fumbles the
+# arithmetic of a loan has not thereby become unreliable about whether the
+# borrower paid on time, and sweeping these into the same score buried an
+# officer in queue items they had no way to act on.
+CONDUCT_PATHS = (
     "informant.missed_payments_12m",
     "informant.longest_delay_days",
     "informant.would_lend_again",
 )
+
+LEDGER_PATHS = ARITHMETIC_PATHS + CONDUCT_PATHS
 
 # What a complete reference looks like. Completeness is measured against this,
 # not against everything the schema permits — a note is nice, not material.
@@ -141,6 +151,8 @@ def ledger_coherence(
     if principal is None or outstanding is None:
         return {
             "score": 0.7,
+            "arithmetic_score": 0.7,
+            "conduct_score": 0.7,
             "checkable": False,
             "problems": [],
             "implied_months_repaid": None,
@@ -153,6 +165,7 @@ def ledger_coherence(
         problems.append(
             {
                 "code": "OUTSTANDING_EXCEEDS_PRINCIPAL",
+                "scope": "ARITHMETIC",
                 "detail": "Outstanding {0} exceeds principal lent {1}.".format(
                     _inr(outstanding), _inr(principal)
                 ),
@@ -180,6 +193,7 @@ def ledger_coherence(
                 problems.append(
                     {
                         "code": "REPAYMENT_EXCEEDS_RELATIONSHIP",
+                        "scope": "ARITHMETIC",
                         "detail": (
                             "{0} repaid at {1}/month implies {2:g} months of repayment, "
                             "but the relationship is stated as {3:g} months.".format(
@@ -194,6 +208,7 @@ def ledger_coherence(
         problems.append(
             {
                 "code": "OUTSTANDING_WITHOUT_REPAYMENT",
+                "scope": "ARITHMETIC",
                 "detail": "{0} outstanding but no monthly repayment stated.".format(
                     _inr(outstanding)
                 ),
@@ -208,6 +223,7 @@ def ledger_coherence(
             problems.append(
                 {
                     "code": "MISSED_EXCEEDS_OBSERVABLE",
+                    "scope": "CONDUCT",
                     "detail": (
                         "{0:g} missed payments reported over a relationship of only "
                         "{1:g} months.".format(missed, months_known)
@@ -217,8 +233,15 @@ def ledger_coherence(
             )
             score -= 0.2
 
+    arithmetic = 1.0 - sum(
+        p["weight"] for p in problems if p.get("scope") == "ARITHMETIC"
+    )
+    conduct = 1.0 - sum(p["weight"] for p in problems if p.get("scope") == "CONDUCT")
+
     return {
         "score": round_half_up(max(0.0, min(1.0, score)), 4),
+        "arithmetic_score": round_half_up(max(0.0, min(1.0, arithmetic)), 4),
+        "conduct_score": round_half_up(max(0.0, min(1.0, conduct)), 4),
         "checkable": True,
         "problems": problems,
         "implied_months_repaid": implied_months_repaid,
@@ -265,14 +288,18 @@ def attestation_quality(
     # exactly like a flawless one and the number stopped carrying information.
     # Scaling keeps the cap absolute while leaving every signal visible.
     identity_score = 0.55 + 0.30 * comp + 0.15 * (1.0 if verified else 0.0)
-    ledger_score = (0.50 + 0.25 * comp + 0.25 * depth) * coherence["score"]
+    substance = 0.50 + 0.25 * comp + 0.25 * depth
+    ledger_score = substance * coherence["arithmetic_score"]
+    conduct_score = substance * coherence["conduct_score"]
 
     identity = ceiling * min(1.0, identity_score)
     ledger = ceiling * min(1.0, ledger_score)
+    conduct = ceiling * min(1.0, conduct_score)
 
     return {
         "identity_score": round_half_up(min(1.0, identity_score), 4),
         "ledger_score": round_half_up(min(1.0, ledger_score), 4),
+        "conduct_score": round_half_up(min(1.0, conduct_score), 4),
         "completeness": comp,
         "coherence": coherence,
         "contact_verified": verified,
@@ -283,6 +310,7 @@ def attestation_quality(
         "ceiling": round_half_up(ceiling, 4),
         "identity_confidence": round_half_up(max(0.05, min(ceiling, identity)), 4),
         "ledger_confidence": round_half_up(max(0.05, min(ceiling, ledger)), 4),
+        "conduct_confidence": round_half_up(max(0.05, min(ceiling, conduct)), 4),
     }
 
 
@@ -294,8 +322,10 @@ def confidence_for(
 ) -> float:
     """Confidence for one informant field, from the reference's overall quality."""
     q = quality or attestation_quality(informant, policy)
-    if path in LEDGER_PATHS:
+    if path in ARITHMETIC_PATHS:
         return q["ledger_confidence"]
+    if path in CONDUCT_PATHS:
+        return q["conduct_confidence"]
     return q["identity_confidence"]
 
 
